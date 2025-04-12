@@ -53,6 +53,7 @@ export default function Dashboard() {
   const [userName, setUserName] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [hostId, setHostId] = useState<string | null>(null);
+  const [playbackHistory, setPlaybackHistory] = useState<string[]>([]);
 
   // Get session info from URL params
   useEffect(() => {
@@ -69,6 +70,9 @@ export default function Dashboard() {
     // Determine if current user is the host
     const hostQuery = searchParams.get('host');
     setIsHost(hostQuery === 'true' || false);
+
+    // Add this to your session initialization code (where you set up the initial session)
+    setPlaybackHistory([]);
   }, [searchParams, session]);
 
   // Replace your existing polling implementation with this one:
@@ -403,6 +407,13 @@ export default function Dashboard() {
     };
   }, [sessionId, router]);
 
+  // Add this effect to track played songs
+  useEffect(() => {
+    if (currentlyPlaying?.item?.id && !playbackHistory.includes(currentlyPlaying.item.id)) {
+      setPlaybackHistory((prev) => [...prev, currentlyPlaying.item.id]);
+    }
+  }, [currentlyPlaying?.item?.id, playbackHistory]);
+
   // Handle search
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -567,24 +578,22 @@ export default function Dashboard() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Determine if a track has already been played
-  // const hasTrackBeenPlayed = (track: QueueItem) => {
-  //   if (!currentlyPlaying || !currentlyPlaying.item) return false;
-
-  //   // Check if current track
-  //   if (track.id === currentlyPlaying.item.id) return true;
-
-  //   // This is the problematic line - it incorrectly marks newer songs as played
-  //   const currentTrackTimestamp = currentlyPlaying.timestamp || 0;
-  //   return track.addedAt < currentTrackTimestamp;
-  // };
-
   // Improved function that correctly identifies played tracks
   const hasTrackBeenPlayed = (track: QueueItem) => {
+    // If nothing is playing, nothing has been played
     if (!currentlyPlaying || !currentlyPlaying.item) return false;
 
-    // Only the currently playing track should be marked as "played"
+    // Check if this is the currently playing track
     if (track.id === currentlyPlaying.item.id) return true;
+
+    // Check if this track is in our playback history
+    if (playbackHistory.includes(track.id)) return true;
+
+    // For duplicate tracks, check if this instance was added before the current track started
+    // and the same track ID exists in our playback history
+    if (playbackHistory.includes(track.id) && currentlyPlaying.timestamp) {
+      return track.addedAt < currentlyPlaying.timestamp;
+    }
 
     return false;
   };
