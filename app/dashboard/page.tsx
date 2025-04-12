@@ -364,11 +364,42 @@ export default function Dashboard() {
       )
       .subscribe();
 
+    const queueAddedSubscription = supabaseClient
+      .channel('host-queue-notify')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'queue_items',
+          filter: `session_id=eq.${sessionId}`,
+        },
+        async (payload) => {
+          // Only the host should respond to this
+          if (isHost && session) {
+            console.log('Host detected new song in queue, adding to Spotify');
+            try {
+              // Get the track URI from the payload
+              const trackURI = payload.new.track_uri;
+
+              // Add the track to Spotify queue
+              await addToQueue(trackURI, session);
+
+              console.log('Added track to Spotify queue successfully');
+            } catch (error) {
+              console.error('Error adding track to Spotify queue:', error);
+            }
+          }
+        }
+      )
+      .subscribe();
+
     // Cleanup function
     return () => {
       supabaseClient.removeChannel(queueSubscription);
       supabaseClient.removeChannel(usersSubscription);
       supabaseClient.removeChannel(sessionSubscription);
+      supabaseClient.removeChannel(queueAddedSubscription);
     };
   }, [sessionId, router]);
 

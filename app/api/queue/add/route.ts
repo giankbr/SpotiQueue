@@ -1,4 +1,7 @@
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { addToQueue } from '@/lib/spotify';
 import { supabaseClient } from '@/lib/supabase-client';
+import { getServerSession } from 'next-auth';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
@@ -10,10 +13,18 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify the session exists
-    const { data: session, error: sessionError } = await supabaseClient.from('sessions').select('*').eq('id', sessionId).eq('active', true).single();
+    const { data: session, error: sessionError } = await supabaseClient.from('sessions').select('*, host_id').eq('id', sessionId).eq('active', true).single();
 
     if (sessionError || !session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    // Get the host user from the database
+    const { data: hostUser, error: hostError } = await supabaseClient.from('session_users').select('*').eq('id', session.host_id).eq('session_id', sessionId).single();
+
+    if (hostError) {
+      console.error('Error getting host user:', hostError);
+      // Continue anyway, we can still add to queue
     }
 
     // Check if the user exists in the session
@@ -67,6 +78,22 @@ export async function POST(req: NextRequest) {
       // Continue as we still added the song to the queue
     }
 
+    // Add track to Spotify queue through the host's session
+    // Get the host's session from server-side OAuth
+    const hostSession = await getServerSession(authOptions);
+
+    // Add to Spotify queue if we have host's session
+    let spotifyQueueSuccess = false;
+    if (hostSession) {
+      try {
+        await addToQueue(track.uri, hostSession);
+        spotifyQueueSuccess = true;
+      } catch (spotifyError) {
+        console.error('Error adding to Spotify queue:', spotifyError);
+        // Continue as we've already added to the app queue
+      }
+    }
+
     return NextResponse.json({
       success: true,
       track: {
@@ -81,6 +108,7 @@ export async function POST(req: NextRequest) {
         addedAt: new Date(queueData.added_at).getTime(),
       },
       updatedSongCount: currentSongCount + 1,
+      addedToSpotify: spotifyQueueSuccess,
     });
   } catch (error) {
     console.error('Error adding track to queue:', error);
