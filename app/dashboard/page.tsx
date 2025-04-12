@@ -537,15 +537,25 @@ export default function Dashboard() {
   };
 
   // Determine if a track has already been played
+  // const hasTrackBeenPlayed = (track: QueueItem) => {
+  //   if (!currentlyPlaying || !currentlyPlaying.item) return false;
+
+  //   // Check if current track
+  //   if (track.id === currentlyPlaying.item.id) return true;
+
+  //   // This is the problematic line - it incorrectly marks newer songs as played
+  //   const currentTrackTimestamp = currentlyPlaying.timestamp || 0;
+  //   return track.addedAt < currentTrackTimestamp;
+  // };
+
+  // Improved function that correctly identifies played tracks
   const hasTrackBeenPlayed = (track: QueueItem) => {
     if (!currentlyPlaying || !currentlyPlaying.item) return false;
 
-    // Check if current track
+    // Only the currently playing track should be marked as "played"
     if (track.id === currentlyPlaying.item.id) return true;
 
-    // Check if added before current track and already played
-    const currentTrackTimestamp = currentlyPlaying.timestamp || 0;
-    return track.addedAt < currentTrackTimestamp;
+    return false;
   };
 
   return (
