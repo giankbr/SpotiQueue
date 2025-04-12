@@ -21,8 +21,10 @@ const toastVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-green-500/20 bg-black text-white',
-        destructive: 'destructive group border-red-500/20 bg-red-900/20 text-red-300',
+        default: 'border bg-background',
+        destructive: 'destructive group border-destructive bg-destructive text-destructive-foreground',
+        success: 'border-green-500 bg-green-500/20 text-green-300',
+        warning: 'border-yellow-500 bg-yellow-500/20 text-yellow-300',
       },
     },
     defaultVariants: {
@@ -42,7 +44,7 @@ const ToastAction = React.forwardRef<React.ElementRef<typeof ToastPrimitives.Act
   <ToastPrimitives.Action
     ref={ref}
     className={cn(
-      'inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-green-500/20 bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-green-500/10 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-red-500/30 group-[.destructive]:hover:border-red-500/30 group-[.destructive]:hover:bg-red-500/10 group-[.destructive]:hover:text-red-300 group-[.destructive]:focus:ring-red-400',
+      'inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-muted/40 group-[.destructive]:hover:border-destructive/30 group-[.destructive]:hover:bg-destructive group-[.destructive]:hover:text-destructive-foreground group-[.destructive]:focus:ring-destructive',
       className
     )}
     {...props}
@@ -54,7 +56,7 @@ const ToastClose = React.forwardRef<React.ElementRef<typeof ToastPrimitives.Clos
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      'absolute right-2 top-2 rounded-md p-1 text-white/50 opacity-0 transition-opacity hover:text-white focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-300 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600',
+      'absolute right-2 top-2 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600',
       className
     )}
     toast-close=""
