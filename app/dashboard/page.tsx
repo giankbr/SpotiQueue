@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { addToQueue, getCurrentlyPlaying, getPlayerState, pauseTrack, playTrack, skipToNext } from '@/lib/spotify';
 import { supabaseClient } from '@/lib/supabase-client';
-import { Clock, Music, Pause, Play, Plus, RefreshCw, Search, Share2, SkipForward, Users } from 'lucide-react';
+import { Clock, Music, Pause, Play, Plus, RefreshCw, Search, Share2, SkipForward, Users, X } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -490,21 +490,48 @@ export default function Dashboard() {
 
       await response.json();
 
-      // If we're the host, also add to Spotify queue
       if (isHost && session) {
-        try {
-          await addToQueue(track.uri, session);
-        } catch (spotifyError) {
-          console.error('Error adding to Spotify queue:', spotifyError);
+        const spotifyQueueRequestSubscription = supabaseClient
+          .channel('spotify-queue-requests')
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'spotify_queue_requests',
+              filter: `session_id=eq.${sessionId} AND processed=eq.false`,
+            },
+            async (payload) => {
+              if (!isHost || !session) return;
 
-          // Show Spotify-specific warning but DON'T prevent success message
-          // since the track was added to the app queue successfully
-          toast({
-            title: 'Spotify Queue Warning',
-            description: "Added to app queue, but couldn't add to Spotify. Make sure a Spotify device is active.",
-            variant: 'default',
-          });
-        }
+              try {
+                console.log('Host processing Spotify queue request');
+                const trackUri = payload.new.track_uri;
+
+                await addToQueue(trackUri, session);
+
+                // Mark as processed
+                await supabaseClient
+                  .from('spotify_queue_requests')
+                  .update({
+                    processed: true,
+                    processed_at: new Date().toISOString(),
+                  })
+                  .eq('id', payload.new.id);
+
+                console.log('Successfully added to Spotify queue');
+              } catch (error) {
+                console.error('Host failed to process queue request:', error);
+              }
+            }
+          )
+          .subscribe();
+
+        // Add this to cleanup
+        return () => {
+          // Existing cleanup code...
+          supabaseClient.removeChannel(spotifyQueueRequestSubscription);
+        };
       }
 
       // Update local queue immediately for better UX
@@ -525,6 +552,46 @@ export default function Dashboard() {
       toast({
         title: 'Queue Error',
         description: 'Failed to add track to queue.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Add this function to your Dashboard component
+  const handleRemoveFromQueue = async (item: QueueItem, index: number) => {
+    if (!sessionId || !userId) return;
+
+    try {
+      const response = await fetch('/api/queue/remove', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          trackId: item.id,
+          userId,
+          index: index,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to remove track');
+      }
+
+      // Update local queue
+      setQueue((prevQueue) => prevQueue.filter((_, i) => i !== index));
+
+      toast({
+        title: 'Removed from Queue',
+        description: `"${item.name}" has been removed from the queue.`,
+      });
+    } catch (error) {
+      console.error('Error removing from queue:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to remove track',
         variant: 'destructive',
       });
     }
@@ -886,7 +953,15 @@ export default function Dashboard() {
                               </span>
                             </div>
                           </div>
-                          <div className="flex-shrink-0 text-xs text-gray-400 bg-black/50 py-1 px-2 rounded-full">{users.find((u) => u.id === item.addedBy)?.name || 'Unknown'}</div>
+                          <div className="flex items-center space-x-2">
+                            <div className="flex-shrink-0 text-xs text-gray-400 bg-black/50 py-1 px-2 rounded-full">{users.find((u) => u.id === item.addedBy)?.name || 'Unknown'}</div>
+                            {/* Show remove button only for host or the user who added the song */}
+                            {(isHost || item.addedBy === userId) && (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-red-500/20 hover:text-red-400" onClick={() => handleRemoveFromQueue(item, index)}>
+                                <X className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       ))}
                   </div>
