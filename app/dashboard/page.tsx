@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { addToQueue, getCurrentlyPlaying, getPlayerState, pauseTrack, playTrack, skipToNext } from '@/lib/spotify';
 import { supabaseClient } from '@/lib/supabase-client';
-import { Clock, Music, Pause, Play, Plus, Search, SkipForward, Users } from 'lucide-react';
+import { Clock, Heart, Music, Pause, Play, Plus, RefreshCw, Search, Share2, SkipForward, Users } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
+  const [hostId, setHostId] = useState<string | null>(null);
 
   // Get session info from URL params
   useEffect(() => {
@@ -236,6 +237,8 @@ export default function Dashboard() {
         const data = await response.json();
         setQueue(data.session.queue || []);
         setUsers(data.session.users || []);
+        // Add this line to set the hostId
+        setHostId(data.session.host_id || null);
 
         if (data.session.currentlyPlaying) {
           setCurrentlyPlaying(data.session.currentlyPlaying);
@@ -320,6 +323,8 @@ export default function Dashboard() {
       )
       .subscribe();
 
+    // Find the sessionSubscription around line 197 and update it:
+
     const sessionSubscription = supabaseClient
       .channel('session-changes')
       .on(
@@ -334,6 +339,11 @@ export default function Dashboard() {
           // When session changes (e.g. currently playing)
           try {
             const currentlyPlaying = payload.new.currently_playing;
+
+            // Add this to update hostId if it changes
+            if (payload.new.host_id) {
+              setHostId(payload.new.host_id);
+            }
 
             if (currentlyPlaying) {
               setCurrentlyPlaying(currentlyPlaying);
@@ -531,201 +541,314 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-900 to-black text-white">
       {/* Header */}
-      <header className="bg-black/50 backdrop-blur-sm p-4 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <div className="bg-green-500 p-2 rounded-full">
+      <header className="bg-black/50 border-b border-white/5 px-4 py-3 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div className="flex items-center space-x-3">
+            <div className="bg-green-500 p-2 rounded-full shadow-lg shadow-green-500/20">
               <Music className="w-5 h-5 text-black" />
             </div>
             <h1 className="text-xl font-bold">SpotiQueue</h1>
-            {sessionCode && <div className="ml-4 bg-green-500/20 px-3 py-1 rounded-full text-sm font-mono">Code: {sessionCode}</div>}
-          </div>
-          <div className="flex items-center space-x-3">
-            <div className="text-sm text-gray-300">
-              {isHost ? 'Host' : 'Guest'}: {userName || session?.user?.name || 'Guest'}
-            </div>
-            {session?.user?.image ? (
-              <Avatar>
-                <AvatarImage src={session.user.image} alt={session.user.name || ''} />
-                <AvatarFallback>{session.user.name?.charAt(0) || 'U'}</AvatarFallback>
-              </Avatar>
-            ) : (
-              <Avatar>
-                <AvatarFallback>{userName?.charAt(0) || 'G'}</AvatarFallback>
-              </Avatar>
+            {sessionCode && (
+              <div className="hidden sm:flex ml-4 items-center gap-2 bg-black/30 border border-white/5 px-3 py-1 rounded-full">
+                <span className="text-sm text-white font-medium">Code: {sessionCode}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-full hover:bg-green-500/10"
+                  onClick={() => {
+                    navigator.clipboard.writeText(sessionCode);
+                    toast({ title: 'Copied to clipboard', description: 'Session code copied!' });
+                  }}
+                >
+                  <Share2 className="h-3 w-3 text-green-500" />
+                </Button>
+              </div>
             )}
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <div className="hidden md:block py-1 px-3 rounded-full bg-black/30 border border-white/5">
+              <span className="text-sm text-white">
+                {isHost ? 'Host' : 'Guest'}: {userName || session?.user?.name || 'Guest'}
+              </span>
+            </div>
+            <Avatar className="border-2 border-white/10">
+              {session?.user?.image ? <AvatarImage src={session.user.image} alt={session.user.name || ''} /> : null}
+              <AvatarFallback className="bg-green-800 text-white">{(userName?.charAt(0) || session?.user?.name?.charAt(0) || 'G').toUpperCase()}</AvatarFallback>
+            </Avatar>
           </div>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Now Playing */}
-        <div className="lg:col-span-3">
-          <Card className="bg-gradient-to-r from-green-900/50 to-black border-green-500/20">
+      <main className="max-w-7xl mx-auto p-4 md:p-6">
+        {/* Now Playing Section */}
+        <section>
+          <Card className="bg-black/30 border-white/5 mb-6 overflow-hidden">
             <CardContent className="p-6">
-              <h2 className="text-xl font-bold mb-4">Now Playing</h2>
-              {currentlyPlaying && currentlyPlaying.item ? (
-                <div className="flex items-center space-x-4">
-                  <div className="flex-shrink-0">
-                    <img src={currentlyPlaying.item?.album.images[0]?.url} alt={currentlyPlaying.item?.album.name} className="w-20 h-20 object-cover rounded-md" />
-                  </div>
-                  <div className="flex-grow">
-                    <h3 className="font-bold">{currentlyPlaying.item?.name}</h3>
-                    <p className="text-gray-300 text-sm">{currentlyPlaying.item?.artists.map((a: any) => a.name).join(', ')}</p>
-                  </div>
-                  {isHost && (
-                    <div className="flex space-x-2">
-                      <Button variant="outline" size="icon" className="rounded-full border-green-500/50 hover:bg-green-500/20" onClick={handlePlayPause}>
-                        {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-                      </Button>
-                      <Button variant="outline" size="icon" className="rounded-full border-green-500/50 hover:bg-green-500/20" onClick={handleSkip}>
-                        <SkipForward className="h-5 w-5" />
-                      </Button>
+              <div className="flex flex-col md:flex-row md:items-center gap-6">
+                {/* Album art */}
+                <div className="flex-shrink-0">
+                  {currentlyPlaying && currentlyPlaying.item ? (
+                    <img src={currentlyPlaying.item?.album.images[0]?.url} alt={currentlyPlaying.item?.album.name} className="w-32 h-32 md:w-44 md:h-44 object-cover rounded-lg shadow-lg" />
+                  ) : (
+                    <div className="w-32 h-32 md:w-44 md:h-44 rounded-lg bg-black/50 border border-white/5 flex items-center justify-center">
+                      <Music className="w-16 h-16 text-green-500/50" />
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="text-center py-6 text-gray-400">
-                  <Music className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                  <p>No track currently playing</p>
-                  {isHost ? <p className="text-sm mt-2">Start playback on your Spotify app</p> : <p className="text-sm mt-2">Waiting for host to play music</p>}
+
+                {/* Track info */}
+                <div className="flex-grow">
+                  <h2 className="text-xl font-bold mb-1 text-green-500">Now Playing</h2>
+
+                  {currentlyPlaying && currentlyPlaying.item ? (
+                    <div className="space-y-2">
+                      <h3 className="text-2xl md:text-3xl font-bold text-white">{currentlyPlaying.item?.name}</h3>
+                      <p className="text-xl text-gray-300">{currentlyPlaying.item?.artists.map((a: any) => a.name).join(', ')}</p>
+                      <p className="text-sm text-gray-400">From album: {currentlyPlaying.item?.album.name}</p>
+
+                      <div className="mt-4 flex items-center gap-3">
+                        {isHost && (
+                          <div className="flex items-center space-x-2">
+                            <Button variant="outline" size="icon" className="rounded-full border-green-500 bg-black/30 hover:bg-green-500/10 h-12 w-12" onClick={handlePlayPause}>
+                              {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
+                            </Button>
+                            <Button variant="outline" size="icon" className="rounded-full border-green-500 bg-black/30 hover:bg-green-500/10 h-12 w-12" onClick={handleSkip}>
+                              <SkipForward className="h-6 w-6" />
+                            </Button>
+                          </div>
+                        )}
+
+                        <Button variant="ghost" size="sm" className="text-green-500 hover:text-green-400 hover:bg-green-500/10 rounded-full">
+                          <Heart className="h-5 w-5 mr-1" />
+                          <span>Save</span>
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-4">
+                      <h3 className="text-2xl font-bold text-white mb-2">Nothing playing yet</h3>
+                      <p className="text-gray-300">{isHost ? 'Start playing music on your Spotify app to begin the session.' : 'Waiting for the host to start the music.'}</p>
+                      {isHost && (
+                        <Button className="mt-4 bg-green-500 hover:bg-green-600 text-black" onClick={() => window.open('https://open.spotify.com', '_blank')}>
+                          Open Spotify
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
-        </div>
+        </section>
 
-        {/* Party People */}
-        <div className="lg:col-span-1">
-          <Card className="bg-black/40 border-green-500/20">
-            <CardContent className="p-6">
-              <h2 className="text-xl font-bold mb-4 flex items-center">
-                <Users className="mr-2 h-5 w-5" />
-                Party People ({users.length || 0})
-              </h2>
-              <div className="space-y-3 mt-4">
-                <h3 className="text-xl font-semibold flex items-center">
-                  <Users className="mr-2 h-5 w-5" /> People in this session
-                </h3>
-                <div className="space-y-2">
+        {/* Main content grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Party People - Sidebar */}
+          <aside className="lg:col-span-1 space-y-6">
+            {/* People section */}
+            <Card className="bg-black/30 border-white/5">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold flex items-center text-green-500">
+                    <Users className="mr-2 h-4 w-4" />
+                    Party People
+                  </h2>
+                  <span className="bg-black/50 text-white text-xs font-medium px-2 py-1 rounded-full">{users.length}</span>
+                </div>
+
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                   {users.map((user) => (
-                    <div key={user.id} className={`flex items-center justify-between p-2 rounded-md ${user.id === userId ? 'bg-green-900/20' : 'bg-black/20'}`}>
+                    <div
+                      key={user.id}
+                      className={`flex items-center justify-between p-2 rounded-md
+                        ${user.id === userId ? 'bg-green-500/20 border border-green-500' : 'bg-black/50 hover:bg-black/70 border border-white/5'}`}
+                    >
                       <div className="flex items-center space-x-2">
                         {user.avatar ? (
                           <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full" />
                         ) : (
-                          <div className="w-8 h-8 bg-green-800 rounded-full flex items-center justify-center">{user.name.charAt(0).toUpperCase()}</div>
-                        )}
-                        <span>
-                          {user.name} {user.id === userId && '(Host)'}
-                        </span>
-                      </div>
-                      <span className="text-sm text-gray-400">Added {user.songsAdded || 0} songs</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Search Section - Available to both hosts and guests */}
-        <div className="lg:col-span-2">
-          <Card className="bg-black/40 border-green-500/20">
-            <CardContent className="p-6">
-              <h2 className="text-xl font-bold mb-4">Search Songs</h2>
-              <div className="flex space-x-2">
-                <Input
-                  type="text"
-                  placeholder="Search for songs, artists..."
-                  className="bg-black/60 border-green-500/30 text-white"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                />
-                <Button className="bg-green-500 hover:bg-green-600 text-black" onClick={handleSearch} disabled={isSearching}>
-                  {isSearching ? <div className="animate-spin">⏳</div> : <Search className="h-5 w-5" />}
-                </Button>
-              </div>
-
-              <div className="mt-4 space-y-2 max-h-[400px] overflow-y-auto">
-                {searchResults.length > 0 ? (
-                  searchResults.map((track) => (
-                    <div key={track.id} className="flex items-center justify-between p-3 bg-black/30 rounded-md hover:bg-green-900/20 transition-colors">
-                      <div className="flex items-center space-x-3">
-                        {track.albumArt ? (
-                          <img src={track.albumArt} alt={track.album} className="w-12 h-12 rounded" />
-                        ) : (
-                          <div className="w-12 h-12 bg-green-900/30 rounded flex items-center justify-center">
-                            <Music className="w-6 h-6 text-green-500/70" />
-                          </div>
+                          <div className="w-8 h-8 bg-green-800 text-white rounded-full flex items-center justify-center text-sm font-medium">{user.name.charAt(0).toUpperCase()}</div>
                         )}
                         <div>
-                          <p className="font-medium">{track.name}</p>
-                          <p className="text-sm text-gray-400">{track.artists}</p>
+                          <div className="font-medium text-sm flex items-center text-white">
+                            {user.name}
+                            {user.id === hostId && <span className="ml-1 bg-green-800 text-white text-xs px-1.5 py-0.5 rounded-full">Host</span>}
+                          </div>
+                          <span className="text-xs text-gray-300">Added {user.songsAdded || 0} songs</span>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm text-gray-400">{formatDuration(track.duration)}</span>
-                        <Button size="sm" variant="ghost" className="text-green-500 hover:text-green-400 hover:bg-green-500/10" onClick={() => handleAddToQueue(track)}>
-                          <Plus className="h-5 w-5" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                ) : searchQuery && !isSearching ? (
-                  <div className="text-center py-10 text-gray-400">
-                    <Search className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                    <p>No results found</p>
-                    <p className="text-sm mt-1">Try different keywords</p>
-                  </div>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Queue Section */}
-        <div className="lg:col-span-3">
-          <Card className="bg-black/40 border-green-500/20">
-            <CardContent className="p-6">
-              <h2 className="text-xl font-bold mb-4">Queue</h2>
-              {queue && queue.length > 0 ? (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                  {queue.map((item, index) => (
-                    <div key={`${item.id}-${index}`} className="flex items-center space-x-3 p-2 bg-black/30 rounded-md">
-                      <div className="flex-shrink-0">
-                        {item.albumArt ? (
-                          <img src={item.albumArt} alt={item.album} className="w-10 h-10 rounded" />
-                        ) : (
-                          <div className="w-10 h-10 bg-green-900/30 rounded flex items-center justify-center">
-                            <Music className="w-5 h-5 text-green-500/70" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-grow min-w-0">
-                        <p className="font-medium truncate">{item.name}</p>
-                        <p className="text-xs text-gray-400 truncate">{item.artists}</p>
-                      </div>
-                      <div className="flex-shrink-0 flex items-center text-xs text-gray-400">
-                        <Clock className="h-3 w-3 mr-1" />
-                        {formatDuration(item.duration)}
-                      </div>
-                      <div className="flex-shrink-0 text-xs text-gray-400">Added by {users.find((u) => u.id === item.addedBy)?.name || 'Unknown'}</div>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="text-center py-10 text-gray-400">
-                  <Music className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                  <p>Queue is empty</p>
-                  <p className="text-sm mt-1">Search and add songs to get started</p>
+              </CardContent>
+            </Card>
+
+            {/* Session info card */}
+            <Card className="bg-black/30 border-white/5">
+              <CardContent className="p-5">
+                <h2 className="text-lg font-bold mb-3 text-green-500">Session Info</h2>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">Session Code:</span>
+                    <div className="flex items-center space-x-1">
+                      <span className="text-lg font-mono font-bold">{sessionCode}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 rounded-full hover:bg-green-500/10 p-0"
+                        onClick={() => {
+                          navigator.clipboard.writeText(sessionCode || '');
+                          toast({ title: 'Copied', description: 'Session code copied to clipboard' });
+                        }}
+                      >
+                        <Share2 className="h-3 w-3 text-green-500" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">Queue length:</span>
+                    <span className="font-medium">{queue.length} songs</span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">Your role:</span>
+                    <span className={`font-medium ${isHost ? 'text-green-500' : 'text-gray-300'}`}>{isHost ? 'Host' : 'Guest'}</span>
+                  </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+
+                <div className="mt-5">
+                  <Button
+                    variant="outline"
+                    className="w-full border-green-500 text-green-500 hover:bg-green-500/10"
+                    onClick={() => {
+                      const url = window.location.origin + `/join?code=${sessionCode}`;
+                      navigator.clipboard.writeText(url);
+                      toast({ title: 'Copied', description: 'Invite link copied to clipboard' });
+                    }}
+                  >
+                    <Share2 className="mr-2 h-4 w-4" /> Share Invite Link
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </aside>
+
+          {/* Main content area - Search and Queue */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Search Section */}
+            <Card className="bg-black/30 border-white/5">
+              <CardContent className="p-5">
+                <h2 className="text-lg font-bold mb-4 text-green-500">Add Songs</h2>
+                <div className="flex space-x-2">
+                  <div className="relative flex-grow">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      type="text"
+                      placeholder="Search for songs, artists..."
+                      className="pl-10 bg-black/50 border-white/5 text-white"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                    />
+                  </div>
+                  <Button className="bg-green-500 hover:bg-green-600 text-black font-medium" onClick={handleSearch} disabled={isSearching}>
+                    {isSearching ? <RefreshCw className="h-5 w-5 animate-spin" /> : 'Search'}
+                  </Button>
+                </div>
+
+                <div className="mt-4 space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                  {searchResults.length > 0 ? (
+                    searchResults.map((track) => (
+                      <div key={track.id} className="flex items-center justify-between p-3 bg-black/50 hover:bg-black/70 border border-white/5 rounded-md">
+                        <div className="flex items-center space-x-3">
+                          {track.albumArt ? (
+                            <img src={track.albumArt} alt={track.album} className="w-12 h-12 rounded shadow-md" />
+                          ) : (
+                            <div className="w-12 h-12 bg-black/70 rounded flex items-center justify-center">
+                              <Music className="w-6 h-6 text-green-500/70" />
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-medium">{track.name}</p>
+                            <p className="text-sm text-gray-400">{track.artists}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <span className="text-sm text-gray-400">{formatDuration(track.duration)}</span>
+                          <Button size="sm" className="bg-green-500 hover:bg-green-600 text-black" onClick={() => handleAddToQueue(track)}>
+                            <Plus className="h-5 w-5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  ) : searchQuery && !isSearching ? (
+                    <div className="text-center py-10 text-gray-400">
+                      <Search className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                      <p>No results found</p>
+                      <p className="text-sm mt-1">Try different keywords</p>
+                    </div>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Queue Section */}
+            <Card className="bg-black/30 border-white/5">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-green-500">Up Next in Queue</h2>
+                  <span className="bg-black/50 text-white text-xs font-medium px-2 py-1 rounded-full">{queue.length} songs</span>
+                </div>
+
+                {queue && queue.length > 0 ? (
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                    {queue.map((item, index) => (
+                      <div key={`${item.id}-${index}`} className="flex items-center space-x-3 p-3 bg-black/50 border border-white/5 rounded-md hover:bg-black/70">
+                        <div className="flex-shrink-0 w-10 text-xs font-medium text-gray-500 text-center">{index + 1}</div>
+                        <div className="flex-shrink-0">
+                          {item.albumArt ? (
+                            <img src={item.albumArt} alt={item.album} className="w-12 h-12 rounded shadow-sm" />
+                          ) : (
+                            <div className="w-12 h-12 bg-black/70 rounded flex items-center justify-center">
+                              <Music className="w-5 h-5 text-green-500/70" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-grow min-w-0 text-white">
+                          <p className="font-medium truncate">{item.name}</p>
+                          <div className="flex items-center text-xs text-gray-400">
+                            <p className="truncate">{item.artists}</p>
+                            <span className="mx-1">•</span>
+                            <span className="flex items-center">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {formatDuration(item.duration)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex-shrink-0 text-xs text-gray-400 bg-black/50 py-1 px-2 rounded-full">{users.find((u) => u.id === item.addedBy)?.name || 'Unknown'}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 bg-black/50 rounded-lg border border-white/5">
+                    <Music className="w-12 h-12 mx-auto mb-3 text-green-500/50" />
+                    <p className="text-lg font-medium text-white">Queue is empty</p>
+                    <p className="text-sm mt-1 text-gray-400">Search and add songs to get started</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="py-6 px-4 mt-6 border-t border-white/5 text-center text-xs text-gray-400">
+        <p>Powered by Spotify API</p>
+      </footer>
     </div>
   );
 }
