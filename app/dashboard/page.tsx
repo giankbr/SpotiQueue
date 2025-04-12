@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { addToQueue, getCurrentlyPlaying, getPlayerState, pauseTrack, playTrack, skipToNext } from '@/lib/spotify';
 import { supabaseClient } from '@/lib/supabase-client';
-import { Clock, Heart, Music, Pause, Play, Plus, RefreshCw, Search, Share2, SkipForward, Users } from 'lucide-react';
+import { Clock, Music, Pause, Play, Plus, RefreshCw, Search, Share2, SkipForward, Users } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -323,8 +323,6 @@ export default function Dashboard() {
       )
       .subscribe();
 
-    // Find the sessionSubscription around line 197 and update it:
-
     const sessionSubscription = supabaseClient
       .channel('session-changes')
       .on(
@@ -548,7 +546,7 @@ export default function Dashboard() {
               <Music className="w-5 h-5 text-black" />
             </div>
             <h1 className="text-xl font-bold">SpotiQueue</h1>
-            {sessionCode && (
+            {/* {sessionCode && (
               <div className="hidden sm:flex ml-4 items-center gap-2 bg-black/30 border border-white/5 px-3 py-1 rounded-full">
                 <span className="text-sm text-white font-medium">Code: {sessionCode}</span>
                 <Button
@@ -563,7 +561,7 @@ export default function Dashboard() {
                   <Share2 className="h-3 w-3 text-green-500" />
                 </Button>
               </div>
-            )}
+            )} */}
           </div>
 
           <div className="flex items-center space-x-3">
@@ -611,18 +609,13 @@ export default function Dashboard() {
                         {isHost && (
                           <div className="flex items-center space-x-2">
                             <Button variant="outline" size="icon" className="rounded-full border-green-500 bg-black/30 hover:bg-green-500/10 h-12 w-12" onClick={handlePlayPause}>
-                              {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
+                              {isPlaying ? <Pause className="h-6 w-6 text-green-500" /> : <Play className="h-6 w-6 text-green-500" />}
                             </Button>
                             <Button variant="outline" size="icon" className="rounded-full border-green-500 bg-black/30 hover:bg-green-500/10 h-12 w-12" onClick={handleSkip}>
-                              <SkipForward className="h-6 w-6" />
+                              <SkipForward className="h-6 w-6 text-green-500" />
                             </Button>
                           </div>
                         )}
-
-                        <Button variant="ghost" size="sm" className="text-green-500 hover:text-green-400 hover:bg-green-500/10 rounded-full">
-                          <Heart className="h-5 w-5 mr-1" />
-                          <span>Save</span>
-                        </Button>
                       </div>
                     </div>
                   ) : (
@@ -689,7 +682,7 @@ export default function Dashboard() {
               <CardContent className="p-5">
                 <h2 className="text-lg font-bold mb-3 text-green-500">Session Info</h2>
 
-                <div className="space-y-3">
+                <div className="space-y-3 text-white">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-400">Session Code:</span>
                     <div className="flex items-center space-x-1">
@@ -721,8 +714,7 @@ export default function Dashboard() {
 
                 <div className="mt-5">
                   <Button
-                    variant="outline"
-                    className="w-full border-green-500 text-green-500 hover:bg-green-500/10"
+                    className="w-full bg-green-500 hover:bg-green-600 text-black font-medium"
                     onClick={() => {
                       const url = window.location.origin + `/join?code=${sessionCode}`;
                       navigator.clipboard.writeText(url);
