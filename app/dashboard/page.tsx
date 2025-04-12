@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { addToQueue, getCurrentlyPlaying, getPlayerState, pauseTrack, playTrack, searchTracks, skipToNext } from '@/lib/spotify';
+import { supabaseClient } from '@/lib/supabase-client';
 import { Clock, Music, Pause, Play, Plus, Search, SkipForward, Users } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -69,20 +70,28 @@ export default function Dashboard() {
     setIsHost(hostQuery === 'true' || false);
   }, [searchParams, session]);
 
-  // Start polling for session updates if we're in a session
-  // Modify your useEffect in the Dashboard component
+  // Replace your existing polling implementation with this one:
   useEffect(() => {
-    if (!sessionId || isPolling) return;
+    if (!sessionId) return;
 
-    const pollInterval = 5000; // Increased from 3000 to 5000ms
-    setIsPolling(true);
-
-    let timeoutId: NodeJS.Timeout;
+    let isActive = true;
+    let timeoutId: NodeJS.Timeout | null = null;
     let consecutiveErrors = 0;
+    const minInterval = 3000; // 3 seconds
+    const maxInterval = 15000; // 15 seconds
 
     const pollSessionStatus = async () => {
+      if (!isActive) return;
+
       try {
-        const response = await fetch(`/api/session/status?sessionId=${sessionId}`);
+        const response = await fetch(`/api/session/status?sessionId=${sessionId}`, {
+          // Add cache control headers to prevent caching
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            Pragma: 'no-cache',
+            Expires: '0',
+          },
+        });
 
         if (!response.ok) {
           if (response.status === 404) {
@@ -94,44 +103,48 @@ export default function Dashboard() {
             router.push('/');
             return;
           }
-          throw new Error(`Failed to fetch session status: ${response.status}`);
+          throw new Error(`Status error: ${response.status}`);
         }
-
-        // Reset error count on success
-        consecutiveErrors = 0;
 
         const data = await response.json();
-        setQueue(data.session.queue || []);
-        setUsers(data.session.users || []);
 
-        if (data.session.currentlyPlaying) {
-          setCurrentlyPlaying(data.session.currentlyPlaying);
-          setIsPlaying(data.session.currentlyPlaying.is_playing || false);
+        if (isActive) {
+          setQueue(data.session.queue || []);
+          setUsers(data.session.users || []);
+
+          if (data.session.currentlyPlaying) {
+            setCurrentlyPlaying(data.session.currentlyPlaying);
+            setIsPlaying(data.session.currentlyPlaying.is_playing || false);
+          }
+
+          // Success - reset error count and use base interval
+          consecutiveErrors = 0;
         }
-
-        // Schedule next poll
-        const nextPoll = Math.min(pollInterval * Math.pow(1.5, consecutiveErrors), 30000);
-        timeoutId = setTimeout(pollSessionStatus, nextPoll);
       } catch (error) {
         console.error('Error polling session status:', error);
 
-        // Increase backoff on consecutive errors
-        consecutiveErrors++;
+        if (isActive) {
+          consecutiveErrors++;
+        }
+      }
 
-        // Exponential backoff with maximum of 30 seconds
-        const nextPoll = Math.min(pollInterval * Math.pow(1.5, consecutiveErrors), 30000);
-        timeoutId = setTimeout(pollSessionStatus, nextPoll);
+      if (isActive) {
+        // Calculate next poll time with exponential backoff
+        const nextInterval = Math.min(minInterval * Math.pow(1.5, consecutiveErrors), maxInterval);
+
+        timeoutId = setTimeout(pollSessionStatus, nextInterval);
       }
     };
 
-    // Initial poll
+    // Start polling
     pollSessionStatus();
 
+    // Cleanup function
     return () => {
+      isActive = false;
       if (timeoutId) clearTimeout(timeoutId);
-      setIsPolling(false);
     };
-  }, [sessionId, router, isPolling]);
+  }, [sessionId, router]);
 
   // For hosts: Poll Spotify for currently playing and update session
   useEffect(() => {
@@ -197,6 +210,159 @@ export default function Dashboard() {
 
     checkDevice();
   }, [session, isHost]);
+
+  // Add this to your Dashboard component
+  useEffect(() => {
+    if (!sessionId) return;
+
+    // Initial fetch to get the session data
+    const fetchSessionData = async () => {
+      try {
+        const response = await fetch(`/api/session/status?sessionId=${sessionId}`);
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            toast({
+              title: 'Session Ended',
+              description: 'The session has ended or no longer exists.',
+              variant: 'destructive',
+            });
+            router.push('/');
+            return;
+          }
+          throw new Error(`Status error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        setQueue(data.session.queue || []);
+        setUsers(data.session.users || []);
+
+        if (data.session.currentlyPlaying) {
+          setCurrentlyPlaying(data.session.currentlyPlaying);
+          setIsPlaying(data.session.currentlyPlaying.is_playing || false);
+        }
+      } catch (error) {
+        console.error('Error fetching session data:', error);
+      }
+    };
+
+    fetchSessionData();
+
+    // Set up realtime subscriptions
+    const queueSubscription = supabaseClient
+      .channel('queue-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'queue_items',
+          filter: `session_id=eq.${sessionId}`,
+        },
+        async () => {
+          // When queue changes, fetch updated queue
+          try {
+            const { data, error } = await supabaseClient.from('queue_items').select('*').eq('session_id', sessionId).order('added_at', { ascending: true });
+
+            if (error) throw error;
+
+            // Update queue state
+            const formattedQueue = data.map((item) => ({
+              id: item.track_id,
+              uri: item.track_uri,
+              name: item.track_name,
+              artists: item.artists,
+              album: item.album,
+              albumArt: item.album_art,
+              duration: item.duration,
+              addedBy: item.added_by,
+              addedAt: new Date(item.added_at).getTime(),
+            }));
+
+            setQueue(formattedQueue);
+          } catch (error) {
+            console.error('Error updating queue:', error);
+          }
+        }
+      )
+      .subscribe();
+
+    const usersSubscription = supabaseClient
+      .channel('users-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'session_users',
+          filter: `session_id=eq.${sessionId}`,
+        },
+        async () => {
+          // When users change, fetch updated users
+          try {
+            const { data, error } = await supabaseClient.from('session_users').select('*').eq('session_id', sessionId);
+
+            if (error) throw error;
+
+            // Update users state
+            const formattedUsers = data.map((user) => ({
+              id: user.id,
+              name: user.name,
+              avatar: user.avatar,
+              songsAdded: user.songs_added,
+            }));
+
+            setUsers(formattedUsers);
+          } catch (error) {
+            console.error('Error updating users:', error);
+          }
+        }
+      )
+      .subscribe();
+
+    const sessionSubscription = supabaseClient
+      .channel('session-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sessions',
+          filter: `id=eq.${sessionId}`,
+        },
+        async (payload) => {
+          // When session changes (e.g. currently playing)
+          try {
+            const currentlyPlaying = payload.new.currently_playing;
+
+            if (currentlyPlaying) {
+              setCurrentlyPlaying(currentlyPlaying);
+              setIsPlaying(currentlyPlaying.is_playing || false);
+            }
+
+            // Check if session is still active
+            if (!payload.new.active) {
+              toast({
+                title: 'Session Ended',
+                description: 'The session has ended or no longer exists.',
+                variant: 'destructive',
+              });
+              router.push('/');
+            }
+          } catch (error) {
+            console.error('Error updating session state:', error);
+          }
+        }
+      )
+      .subscribe();
+
+    // Cleanup function
+    return () => {
+      supabaseClient.removeChannel(queueSubscription);
+      supabaseClient.removeChannel(usersSubscription);
+      supabaseClient.removeChannel(sessionSubscription);
+    };
+  }, [sessionId, router]);
 
   // Handle search
   const handleSearch = async () => {
