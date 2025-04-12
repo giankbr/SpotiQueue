@@ -54,6 +54,7 @@ export default function Dashboard() {
   const [isPolling, setIsPolling] = useState(false);
   const [hostId, setHostId] = useState<string | null>(null);
   const [playbackHistory, setPlaybackHistory] = useState<string[]>([]);
+  const [shownSpotifyQueueInfo, setShownSpotifyQueueInfo] = useState(false);
 
   // Get session info from URL params
   useEffect(() => {
@@ -472,6 +473,18 @@ export default function Dashboard() {
     }
   }, [currentlyPlaying?.item?.id, playbackHistory]);
 
+  // Add this effect after your other effects
+  useEffect(() => {
+    if (!shownSpotifyQueueInfo && queue.length > 0) {
+      toast({
+        title: 'Spotify Queue Info',
+        description: "Due to Spotify API limitations, removing songs from the app queue won't remove them from Spotify's queue. The host will need to skip these tracks in Spotify.",
+        duration: 7000,
+      });
+      setShownSpotifyQueueInfo(true);
+    }
+  }, [queue.length, shownSpotifyQueueInfo]);
+
   // Handle search
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -615,8 +628,6 @@ export default function Dashboard() {
     }
   };
 
-  // Update your handleRemoveFromQueue function
-
   const handleRemoveFromQueue = async (item: QueueItem, index: number) => {
     if (!sessionId || !userId) return;
 
@@ -625,6 +636,10 @@ export default function Dashboard() {
       const { data: queueItemData } = await supabaseClient.from('queue_items').select('id').eq('session_id', sessionId).eq('track_id', item.id).eq('added_by', item.addedBy).limit(1).single();
 
       const queueItemId = queueItemData?.id;
+
+      if (!queueItemId) {
+        throw new Error('Could not find queue item in database');
+      }
 
       const response = await fetch('/api/queue/remove', {
         method: 'POST',
@@ -635,29 +650,40 @@ export default function Dashboard() {
           sessionId,
           trackId: item.id,
           userId,
-          queueItemId, // Send the specific queue item ID
+          queueItemId,
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || 'Failed to remove track');
       }
 
       // Optimistically update the UI - remove matching track
       setQueue((prevQueue) => {
-        const newQueue = [...prevQueue];
-        // Find the item with the same ID and addedBy (to handle duplicates)
-        const itemIndex = newQueue.findIndex((qItem) => qItem.id === item.id && qItem.addedBy === item.addedBy && qItem.addedAt === item.addedAt);
-        if (itemIndex !== -1) {
-          newQueue.splice(itemIndex, 1);
-        }
-        return newQueue;
+        return prevQueue.filter((qItem) => !(qItem.id === item.id && qItem.addedBy === item.addedBy && qItem.addedAt === item.addedAt));
       });
 
+      // Update local user song count
+      if (item.addedBy) {
+        setUsers((prevUsers) =>
+          prevUsers.map((user) => {
+            if (user.id === item.addedBy) {
+              return {
+                ...user,
+                songsAdded: Math.max(0, (user.songsAdded || 1) - 1),
+              };
+            }
+            return user;
+          })
+        );
+      }
+
+      // Show a toast with information about Spotify limitation
       toast({
         title: 'Removed from Queue',
-        description: `"${item.name}" has been removed from the queue.`,
+        description: data.spotifyNote || `"${item.name}" has been removed from the queue.`,
       });
     } catch (error) {
       console.error('Error removing from queue:', error);

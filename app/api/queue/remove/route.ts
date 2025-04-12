@@ -9,43 +9,53 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session ID, track ID, and user ID are required' }, { status: 400 });
     }
 
-    // Verify the session exists
+    // Get session info including host
     const { data: session, error: sessionError } = await supabaseClient.from('sessions').select('host_id').eq('id', sessionId).eq('active', true).single();
 
     if (sessionError || !session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
-    // Check if user is authorized to remove track (host or the person who added it)
+    // Check who added this song (to update their song count later)
+    const { data: queueItem, error: queueItemError } = await supabaseClient.from('queue_items').select('added_by').eq('id', queueItemId).single();
+
+    if (queueItemError) {
+      console.error('Error finding queue item:', queueItemError);
+      return NextResponse.json({ error: 'Queue item not found' }, { status: 404 });
+    }
+
+    // Check authorization - only host or the person who added it can remove
     const isHost = userId === session.host_id;
-    if (!isHost) {
-      // Find the specific queue item
-      const { data: queueItem, error: queueItemError } = await supabaseClient.from('queue_items').select('added_by').eq('session_id', sessionId).eq('track_id', trackId).eq('id', queueItemId).single();
-
-      if (queueItemError || !queueItem || queueItem.added_by !== userId) {
-        return NextResponse.json({ error: 'Not authorized to remove this track' }, { status: 403 });
-      }
+    if (!isHost && queueItem.added_by !== userId) {
+      return NextResponse.json({ error: 'Not authorized to remove this track' }, { status: 403 });
     }
 
-    // Delete the queue item - use the specific ID if provided
-    let query = supabaseClient.from('queue_items').delete().eq('session_id', sessionId);
+    // Remove the track from our DB queue
+    const { error: removeError } = await supabaseClient.from('queue_items').delete().eq('id', queueItemId);
 
-    if (queueItemId) {
-      // If we have the specific queue item ID, use it for precise deletion
-      query = query.eq('id', queueItemId);
-    } else {
-      // Otherwise use track ID (be careful with duplicates)
-      query = query.eq('track_id', trackId);
-    }
-
-    const { error: deleteError } = await query;
-
-    if (deleteError) {
-      console.error('Error removing track:', deleteError);
+    if (removeError) {
+      console.error('Error removing track:', removeError);
       return NextResponse.json({ error: 'Failed to remove track from queue' }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true });
+    // Decrement the song count for the user who added it
+    if (queueItem.added_by) {
+      const { data: userData, error: userError } = await supabaseClient.from('session_users').select('songs_added').eq('id', queueItem.added_by).eq('session_id', sessionId).single();
+
+      if (!userError && userData) {
+        // Only decrease if greater than 0
+        const newCount = Math.max(0, (userData.songs_added || 1) - 1);
+
+        await supabaseClient.from('session_users').update({ songs_added: newCount }).eq('id', queueItem.added_by).eq('session_id', sessionId);
+      }
+    }
+
+    // NOTE: Spotify doesn't have an API to remove items from the queue directly
+    // We'll add a message to inform the user about this limitation
+    return NextResponse.json({
+      success: true,
+      spotifyNote: "Song removed from app queue. Note that Spotify doesn't allow removing songs from queue via API, so it may still play in Spotify.",
+    });
   } catch (error) {
     console.error('Error removing track:', error);
     return NextResponse.json({ error: 'Failed to remove track from queue' }, { status: 500 });
