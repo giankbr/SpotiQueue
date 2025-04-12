@@ -14,7 +14,7 @@ const scopes = [
   'playlist-modify-public',
 ].join(' ');
 
-const handler = NextAuth({
+export const authOptions = {
   providers: [
     SpotifyProvider({
       clientId: process.env.SPOTIFY_CLIENT_ID as string,
@@ -55,7 +55,7 @@ const handler = NextAuth({
   pages: {
     signIn: '/host',
   },
-});
+};
 
 async function refreshAccessToken(token: any) {
   try {
@@ -94,4 +94,5 @@ async function refreshAccessToken(token: any) {
   }
 }
 
+const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };
