@@ -1,8 +1,9 @@
-import type React from 'react';
+import NextAuthSessionProvider from '@/components/SessionProvider';
+import { Toaster } from '@/components/ui/toaster';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import type React from 'react';
 import './globals.css';
-import NextAuthSessionProvider from '@/components/SessionProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -19,7 +20,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <NextAuthSessionProvider>{children}</NextAuthSessionProvider>
+        <NextAuthSessionProvider>
+          {children}
+          <Toaster />
+        </NextAuthSessionProvider>
       </body>
     </html>
   );
