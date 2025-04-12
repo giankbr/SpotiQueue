@@ -776,7 +776,7 @@ export default function Dashboard() {
                             </div>
                           )}
                           <div>
-                            <p className="font-medium">{track.name}</p>
+                            <p className="font-medium text-white">{track.name}</p>
                             <p className="text-sm text-gray-400">{track.artists}</p>
                           </div>
                         </div>
