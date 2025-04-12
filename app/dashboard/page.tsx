@@ -536,6 +536,18 @@ export default function Dashboard() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // Determine if a track has already been played
+  const hasTrackBeenPlayed = (track: QueueItem) => {
+    if (!currentlyPlaying || !currentlyPlaying.item) return false;
+
+    // Check if current track
+    if (track.id === currentlyPlaying.item.id) return true;
+
+    // Check if added before current track and already played
+    const currentTrackTimestamp = currentlyPlaying.timestamp || 0;
+    return track.addedAt < currentTrackTimestamp;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-900 to-black text-white">
       {/* Header */}
@@ -792,43 +804,79 @@ export default function Dashboard() {
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold text-green-500">Up Next in Queue</h2>
-                  <span className="bg-black/50 text-white text-xs font-medium px-2 py-1 rounded-full">{queue.length} songs</span>
+
+                  {/* Count only upcoming tracks */}
+                  <span className="bg-black/50 text-white text-xs font-medium px-2 py-1 rounded-full">{queue.filter((item) => !hasTrackBeenPlayed(item)).length} songs</span>
                 </div>
 
-                {queue && queue.length > 0 ? (
+                {queue.filter((item) => !hasTrackBeenPlayed(item)).length > 0 ? (
                   <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                    {queue.map((item, index) => (
-                      <div key={`${item.id}-${index}`} className="flex items-center space-x-3 p-3 bg-black/50 border border-white/5 rounded-md hover:bg-black/70">
-                        <div className="flex-shrink-0 w-10 text-xs font-medium text-gray-500 text-center">{index + 1}</div>
-                        <div className="flex-shrink-0">
-                          {item.albumArt ? (
-                            <img src={item.albumArt} alt={item.album} className="w-12 h-12 rounded shadow-sm" />
-                          ) : (
-                            <div className="w-12 h-12 bg-black/70 rounded flex items-center justify-center">
-                              <Music className="w-5 h-5 text-green-500/70" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-grow min-w-0 text-white">
-                          <p className="font-medium truncate">{item.name}</p>
-                          <div className="flex items-center text-xs text-gray-400">
-                            <p className="truncate">{item.artists}</p>
-                            <span className="mx-1">•</span>
-                            <span className="flex items-center">
-                              <Clock className="h-3 w-3 mr-1" />
-                              {formatDuration(item.duration)}
-                            </span>
+                    {queue
+                      .filter((item) => !hasTrackBeenPlayed(item))
+                      .map((item, index) => (
+                        <div key={`${item.id}-${index}`} className="flex items-center space-x-3 p-3 bg-black/50 border border-white/5 rounded-md hover:bg-black/70">
+                          <div className="flex-shrink-0 w-10 text-xs font-medium text-gray-500 text-center">{index + 1}</div>
+                          <div className="flex-shrink-0">
+                            {item.albumArt ? (
+                              <img src={item.albumArt} alt={item.album} className="w-12 h-12 rounded shadow-sm" />
+                            ) : (
+                              <div className="w-12 h-12 bg-black/70 rounded flex items-center justify-center">
+                                <Music className="w-5 h-5 text-green-500/70" />
+                              </div>
+                            )}
                           </div>
+                          <div className="flex-grow min-w-0 text-white">
+                            <p className="font-medium truncate">{item.name}</p>
+                            <div className="flex items-center text-xs text-gray-400">
+                              <p className="truncate">{item.artists}</p>
+                              <span className="mx-1">•</span>
+                              <span className="flex items-center">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {formatDuration(item.duration)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 text-xs text-gray-400 bg-black/50 py-1 px-2 rounded-full">{users.find((u) => u.id === item.addedBy)?.name || 'Unknown'}</div>
                         </div>
-                        <div className="flex-shrink-0 text-xs text-gray-400 bg-black/50 py-1 px-2 rounded-full">{users.find((u) => u.id === item.addedBy)?.name || 'Unknown'}</div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 ) : (
                   <div className="text-center py-12 bg-black/50 rounded-lg border border-white/5">
                     <Music className="w-12 h-12 mx-auto mb-3 text-green-500/50" />
                     <p className="text-lg font-medium text-white">Queue is empty</p>
                     <p className="text-sm mt-1 text-gray-400">Search and add songs to get started</p>
+                  </div>
+                )}
+
+                {/* Display of played tracks (optional) */}
+                {queue.filter((item) => hasTrackBeenPlayed(item)).length > 0 && (
+                  <div className="mt-6">
+                    <div className="flex items-center mb-3">
+                      <h3 className="text-sm font-medium text-gray-400">Recently Played</h3>
+                      <div className="flex-grow ml-3 h-px bg-white/5"></div>
+                    </div>
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto opacity-60">
+                      {queue
+                        .filter((item) => hasTrackBeenPlayed(item))
+                        .slice(0, 5) // Limit to last 5 played
+                        .map((item, index) => (
+                          <div key={`played-${item.id}-${index}`} className="flex items-center space-x-3 p-2 bg-black/30 rounded-md">
+                            <div className="flex-shrink-0">
+                              {item.albumArt ? (
+                                <img src={item.albumArt} alt={item.album} className="w-9 h-9 rounded opacity-70" />
+                              ) : (
+                                <div className="w-9 h-9 bg-black/70 rounded flex items-center justify-center">
+                                  <Music className="w-4 h-4 text-green-500/50" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-grow min-w-0 text-gray-400">
+                              <p className="text-sm font-medium truncate">{item.name}</p>
+                              <p className="text-xs truncate">{item.artists}</p>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
                   </div>
                 )}
               </CardContent>
