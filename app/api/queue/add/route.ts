@@ -19,15 +19,15 @@ export async function POST(req: NextRequest) {
     // Check if the user exists in the session
     const { data: userData, error: userError } = await supabaseClient.from('session_users').select('*').eq('id', userId).eq('session_id', sessionId).single();
 
-    // If user doesn't exist, create them (for guests who may not have been added yet)
+    // If user doesn't exist, create them with default values
     if (userError) {
-      // Extract name from track metadata if not provided
       const userName = 'Guest';
 
       await supabaseClient.from('session_users').insert({
         id: userId,
         session_id: sessionId,
         name: userName,
+        songs_added: 0, // Initialize with 0 songs
       });
     }
 
@@ -53,12 +53,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to add track to queue' }, { status: 500 });
     }
 
-    // Increment songs_added for the user
-    await supabaseClient
+    // Update the user's song count by incrementing it
+    let currentSongCount = userData?.songs_added || 0;
+
+    const { error: updateError } = await supabaseClient
       .from('session_users')
-      .update({ songs_added: supabaseClient.rpc('increment', { inc: 1 }) })
+      .update({ songs_added: currentSongCount + 1 })
       .eq('id', userId)
       .eq('session_id', sessionId);
+
+    if (updateError) {
+      console.error('Error updating user song count:', updateError);
+      // Continue as we still added the song to the queue
+    }
 
     return NextResponse.json({
       success: true,
@@ -73,6 +80,7 @@ export async function POST(req: NextRequest) {
         addedBy: queueData.added_by,
         addedAt: new Date(queueData.added_at).getTime(),
       },
+      updatedSongCount: currentSongCount + 1,
     });
   } catch (error) {
     console.error('Error adding track to queue:', error);

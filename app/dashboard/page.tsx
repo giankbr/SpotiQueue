@@ -603,29 +603,27 @@ export default function Dashboard() {
                 <Users className="mr-2 h-5 w-5" />
                 Party People ({users.length || 0})
               </h2>
-              <div className="space-y-3">
-                {users && users.length > 0 ? (
-                  users.map((user) => (
-                    <div key={user.id} className="flex items-center space-x-3 p-2 bg-black/30 rounded-md">
-                      <Avatar className="h-8 w-8">
-                        {user.avatar ? <AvatarImage src={user.avatar} alt={user.name} /> : null}
-                        <AvatarFallback className="text-xs">{user.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-grow">
-                        <p className="font-medium text-sm">
-                          {user.name}
-                          {user.id === (session?.user?.email || session?.user?.name) && ' (You)'}
-                        </p>
-                        <p className="text-xs text-gray-400">Added {user.songsAdded} songs</p>
+              <div className="space-y-3 mt-4">
+                <h3 className="text-xl font-semibold flex items-center">
+                  <Users className="mr-2 h-5 w-5" /> People in this session
+                </h3>
+                <div className="space-y-2">
+                  {users.map((user) => (
+                    <div key={user.id} className={`flex items-center justify-between p-2 rounded-md ${user.id === userId ? 'bg-green-900/20' : 'bg-black/20'}`}>
+                      <div className="flex items-center space-x-2">
+                        {user.avatar ? (
+                          <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full" />
+                        ) : (
+                          <div className="w-8 h-8 bg-green-800 rounded-full flex items-center justify-center">{user.name.charAt(0).toUpperCase()}</div>
+                        )}
+                        <span>
+                          {user.name} {user.id === userId && '(Host)'}
+                        </span>
                       </div>
+                      <span className="text-sm text-gray-400">Added {user.songsAdded || 0} songs</span>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-4 text-gray-400">
-                    <p>No one has joined yet</p>
-                    <p className="text-xs mt-1">Share the code: {sessionCode}</p>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>
