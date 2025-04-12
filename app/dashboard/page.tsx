@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
-import { addToQueue, getCurrentlyPlaying, getPlayerState, pauseTrack, playTrack, searchTracks, skipToNext } from '@/lib/spotify';
+import { addToQueue, getCurrentlyPlaying, getPlayerState, pauseTrack, playTrack, skipToNext } from '@/lib/spotify';
 import { supabaseClient } from '@/lib/supabase-client';
 import { Clock, Music, Pause, Play, Plus, Search, SkipForward, Users } from 'lucide-react';
 import { useSession } from 'next-auth/react';
@@ -366,11 +366,18 @@ export default function Dashboard() {
 
   // Handle search
   const handleSearch = async () => {
-    if (!searchQuery.trim() || !session) return;
+    if (!searchQuery.trim()) return;
 
     setIsSearching(true);
     try {
-      const data = await searchTracks(searchQuery, session);
+      // Use the API endpoint we just created that works for both hosts and guests
+      const response = await fetch(`/api/spotify/search?q=${encodeURIComponent(searchQuery)}`);
+
+      if (!response.ok) {
+        throw new Error(`Search failed: ${response.status}`);
+      }
+
+      const data = await response.json();
 
       const formattedResults = data.tracks.items.map((track: any) => ({
         id: track.id,
@@ -407,22 +414,6 @@ export default function Dashboard() {
     }
 
     try {
-      // If we're the host, add to Spotify queue
-      if (isHost && session) {
-        try {
-          await addToQueue(track.uri, session);
-        } catch (error) {
-          console.error('Error adding to Spotify queue:', error);
-          toast({
-            title: 'Spotify Queue Error',
-            description: 'Failed to add track to Spotify. Make sure a Spotify device is active.',
-            variant: 'destructive',
-          });
-          return;
-        }
-      }
-
-      // Add to session queue for all users to see
       const response = await fetch('/api/queue/add', {
         method: 'POST',
         headers: {
@@ -447,7 +438,24 @@ export default function Dashboard() {
         throw new Error('Failed to add track to queue');
       }
 
-      const data = await response.json();
+      await response.json();
+
+      // If we're the host, also add to Spotify queue
+      if (isHost && session) {
+        try {
+          await addToQueue(track.uri, session);
+        } catch (spotifyError) {
+          console.error('Error adding to Spotify queue:', spotifyError);
+
+          // Show Spotify-specific warning but DON'T prevent success message
+          // since the track was added to the app queue successfully
+          toast({
+            title: 'Spotify Queue Warning',
+            description: "Added to app queue, but couldn't add to Spotify. Make sure a Spotify device is active.",
+            variant: 'default',
+          });
+        }
+      }
 
       // Update local queue immediately for better UX
       const queuedTrack: QueueItem = {
@@ -623,7 +631,7 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Search Section */}
+        {/* Search Section - Available to both hosts and guests */}
         <div className="lg:col-span-2">
           <Card className="bg-black/40 border-green-500/20">
             <CardContent className="p-6">
