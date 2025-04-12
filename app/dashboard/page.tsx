@@ -398,6 +398,64 @@ export default function Dashboard() {
       )
       .subscribe();
 
+    // Host subscription to process Spotify queue requests
+    if (isHost && session) {
+      const spotifyQueueRequestSubscription = supabaseClient
+        .channel('spotify-queue-requests')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'spotify_queue_requests',
+            filter: `session_id=eq.${sessionId} AND processed=eq.false`,
+          },
+          async (payload) => {
+            console.log('Host received Spotify queue request:', payload.new);
+
+            // Process the request
+            try {
+              // Add to Spotify
+              await addToQueue(payload.new.track_uri, session);
+
+              // Mark as processed
+              await supabaseClient
+                .from('spotify_queue_requests')
+                .update({
+                  processed: true,
+                  processed_at: new Date().toISOString(),
+                })
+                .eq('id', payload.new.id);
+
+              console.log(`Successfully added "${payload.new.track_name}" to Spotify queue`);
+
+              // No need for toast notification as the person who added it already got one
+            } catch (error) {
+              console.error('Failed to add track to Spotify queue:', error);
+
+              // Notify that there was an issue
+              if (payload.new.track_name) {
+                toast({
+                  title: 'Spotify Queue Warning',
+                  description: `Failed to add "${payload.new.track_name}" to Spotify. Make sure Spotify is active.`,
+                  variant: 'warning',
+                });
+              }
+            }
+          }
+        )
+        .subscribe();
+
+      // Don't forget to add this to cleanup
+      return () => {
+        supabaseClient.removeChannel(queueSubscription);
+        supabaseClient.removeChannel(usersSubscription);
+        supabaseClient.removeChannel(sessionSubscription);
+        supabaseClient.removeChannel(queueAddedSubscription);
+        supabaseClient.removeChannel(spotifyQueueRequestSubscription); // Add this line
+      };
+    }
+
     // Cleanup function
     return () => {
       supabaseClient.removeChannel(queueSubscription);
@@ -557,11 +615,17 @@ export default function Dashboard() {
     }
   };
 
-  // Add this function to your Dashboard component
+  // Update your handleRemoveFromQueue function
+
   const handleRemoveFromQueue = async (item: QueueItem, index: number) => {
     if (!sessionId || !userId) return;
 
     try {
+      // Find the specific database ID for this queue item
+      const { data: queueItemData } = await supabaseClient.from('queue_items').select('id').eq('session_id', sessionId).eq('track_id', item.id).eq('added_by', item.addedBy).limit(1).single();
+
+      const queueItemId = queueItemData?.id;
+
       const response = await fetch('/api/queue/remove', {
         method: 'POST',
         headers: {
@@ -571,7 +635,7 @@ export default function Dashboard() {
           sessionId,
           trackId: item.id,
           userId,
-          index: index,
+          queueItemId, // Send the specific queue item ID
         }),
       });
 
@@ -580,8 +644,16 @@ export default function Dashboard() {
         throw new Error(data.error || 'Failed to remove track');
       }
 
-      // Update local queue
-      setQueue((prevQueue) => prevQueue.filter((_, i) => i !== index));
+      // Optimistically update the UI - remove matching track
+      setQueue((prevQueue) => {
+        const newQueue = [...prevQueue];
+        // Find the item with the same ID and addedBy (to handle duplicates)
+        const itemIndex = newQueue.findIndex((qItem) => qItem.id === item.id && qItem.addedBy === item.addedBy && qItem.addedAt === item.addedAt);
+        if (itemIndex !== -1) {
+          newQueue.splice(itemIndex, 1);
+        }
+        return newQueue;
+      });
 
       toast({
         title: 'Removed from Queue',

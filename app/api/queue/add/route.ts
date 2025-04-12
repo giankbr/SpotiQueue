@@ -1,7 +1,4 @@
-import { authOptions } from '@/lib/auth';
-import { addToQueue } from '@/lib/spotify';
 import { supabaseClient } from '@/lib/supabase-client';
-import { getServerSession } from 'next-auth/next';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
@@ -65,30 +62,21 @@ export async function POST(req: NextRequest) {
       .eq('id', userId)
       .eq('session_id', sessionId);
 
-    // Important: Try to add to Spotify queue using server-side credentials
-    // Get server session
-    const authSession = await getServerSession(authOptions);
-    let spotifySuccess = false;
+    // Create a Spotify queue request record that will be picked up by the host
+    const { error: requestError } = await supabaseClient.from('spotify_queue_requests').insert({
+      session_id: sessionId,
+      track_uri: track.uri,
+      track_name: track.name,
+      requested_at: new Date().toISOString(),
+    });
 
-    if (authSession) {
-      try {
-        await addToQueue(track.uri, authSession);
-        spotifySuccess = true;
-      } catch (error) {
-        console.error('Server failed to add to Spotify queue:', error);
-
-        // If server fails, notify the host client to try (fallback)
-        await supabaseClient.from('spotify_queue_requests').insert({
-          session_id: sessionId,
-          track_uri: track.uri,
-          requested_at: new Date().toISOString(),
-        });
-      }
+    if (requestError) {
+      console.error('Error creating Spotify queue request:', requestError);
+      // We continue anyway as the track is in our app queue
     }
 
     return NextResponse.json({
       success: true,
-      addedToSpotify: spotifySuccess,
       track: {
         id: queueData.track_id,
         uri: queueData.track_uri,

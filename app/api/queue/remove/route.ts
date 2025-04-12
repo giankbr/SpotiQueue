@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
   try {
-    const { sessionId, trackId, userId, index } = await req.json();
+    const { sessionId, trackId, userId, queueItemId } = await req.json();
 
     if (!sessionId || !trackId || !userId) {
       return NextResponse.json({ error: 'Session ID, track ID, and user ID are required' }, { status: 400 });
@@ -16,26 +16,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
-    // Only host or the user who added the song can remove it
-    if (userId !== session.host_id) {
-      const { data: queueItem, error: queueError } = await supabaseClient.from('queue_items').select('added_by').eq('session_id', sessionId).eq('track_id', trackId).eq('id', index).single();
+    // Check if user is authorized to remove track (host or the person who added it)
+    const isHost = userId === session.host_id;
+    if (!isHost) {
+      // Find the specific queue item
+      const { data: queueItem, error: queueItemError } = await supabaseClient.from('queue_items').select('added_by').eq('session_id', sessionId).eq('track_id', trackId).eq('id', queueItemId).single();
 
-      if (queueError || !queueItem || queueItem.added_by !== userId) {
-        return NextResponse.json({ error: 'You can only remove songs you added' }, { status: 403 });
+      if (queueItemError || !queueItem || queueItem.added_by !== userId) {
+        return NextResponse.json({ error: 'Not authorized to remove this track' }, { status: 403 });
       }
     }
 
-    // Remove the track
-    const { error: removeError } = await supabaseClient.from('queue_items').delete().eq('session_id', sessionId).eq('track_id', trackId).eq('id', index);
+    // Delete the queue item - use the specific ID if provided
+    let query = supabaseClient.from('queue_items').delete().eq('session_id', sessionId);
 
-    if (removeError) {
-      console.error('Error removing track from queue:', removeError);
+    if (queueItemId) {
+      // If we have the specific queue item ID, use it for precise deletion
+      query = query.eq('id', queueItemId);
+    } else {
+      // Otherwise use track ID (be careful with duplicates)
+      query = query.eq('track_id', trackId);
+    }
+
+    const { error: deleteError } = await query;
+
+    if (deleteError) {
+      console.error('Error removing track:', deleteError);
       return NextResponse.json({ error: 'Failed to remove track from queue' }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error removing track from queue:', error);
+    console.error('Error removing track:', error);
     return NextResponse.json({ error: 'Failed to remove track from queue' }, { status: 500 });
   }
 }
