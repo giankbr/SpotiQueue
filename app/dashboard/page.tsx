@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
-import { addToQueue, getCurrentlyPlaying, pauseTrack, playTrack, searchTracks, skipToNext } from '@/lib/spotify';
-import { Clock, Music, Pause, Play, Plus, Search, SkipForward } from 'lucide-react';
+import { addToQueue, getCurrentlyPlaying, getPlayerState, pauseTrack, playTrack, searchTracks, skipToNext } from '@/lib/spotify';
+import { Clock, Music, Pause, Play, Plus, Search, SkipForward, Users } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -23,7 +23,14 @@ type Track = {
 
 type QueueItem = Track & {
   addedBy: string;
-  addedAt: Date;
+  addedAt: number;
+};
+
+type SessionUser = {
+  id: string;
+  name: string;
+  avatar?: string;
+  songsAdded: number;
 };
 
 export default function Dashboard() {
@@ -35,37 +42,146 @@ export default function Dashboard() {
   const [searchResults, setSearchResults] = useState<Track[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [users, setUsers] = useState<SessionUser[]>([]);
   const [currentlyPlaying, setCurrentlyPlaying] = useState<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [sessionCode, setSessionCode] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isHost, setIsHost] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
 
   // Get session info from URL params
   useEffect(() => {
     const code = searchParams.get('code');
-    if (code) {
-      setSessionCode(code);
-    }
-  }, [searchParams]);
+    const id = searchParams.get('session');
+    const uid = searchParams.get('userId') || session?.user?.email || session?.user?.name || null;
+    const name = searchParams.get('username') || session?.user?.name || 'Guest';
 
-  // Poll for currently playing track
+    if (code) setSessionCode(code);
+    if (id) setSessionId(id);
+    if (uid) setUserId(uid);
+    if (name) setUserName(name);
+
+    // Determine if current user is the host
+    const hostQuery = searchParams.get('host');
+    setIsHost(hostQuery === 'true' || false);
+  }, [searchParams, session]);
+
+  // Start polling for session updates if we're in a session
   useEffect(() => {
-    if (!session) return;
+    if (!sessionId || isPolling) return;
 
-    const fetchCurrentlyPlaying = async () => {
+    const pollInterval = 3000; // Poll every 3 seconds
+    setIsPolling(true);
+
+    const pollSessionStatus = async () => {
       try {
-        const data = await getCurrentlyPlaying(session);
-        setCurrentlyPlaying(data);
-        setIsPlaying(data?.is_playing || false);
+        const response = await fetch(`/api/session/status?sessionId=${sessionId}`);
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            toast({
+              title: 'Session Ended',
+              description: 'The session has ended or no longer exists.',
+              variant: 'destructive',
+            });
+            router.push('/');
+            return;
+          }
+          throw new Error('Failed to fetch session status');
+        }
+
+        const data = await response.json();
+        setQueue(data.session.queue || []);
+        setUsers(data.session.users || []);
+
+        if (data.session.currentlyPlaying) {
+          setCurrentlyPlaying(data.session.currentlyPlaying);
+          setIsPlaying(data.session.currentlyPlaying.is_playing || false);
+        }
       } catch (error) {
-        console.error('Error fetching currently playing:', error);
+        console.error('Error polling session status:', error);
       }
     };
 
-    fetchCurrentlyPlaying();
-    const interval = setInterval(fetchCurrentlyPlaying, 5000);
+    // Initial poll
+    pollSessionStatus();
 
-    return () => clearInterval(interval);
-  }, [session]);
+    // Set up interval for polling
+    const intervalId = setInterval(pollSessionStatus, pollInterval);
+
+    return () => {
+      clearInterval(intervalId);
+      setIsPolling(false);
+    };
+  }, [sessionId, router, isPolling]);
+
+  // For hosts: Poll Spotify for currently playing and update session
+  useEffect(() => {
+    if (!session || !isHost || !sessionId) return;
+
+    const pollInterval = 5000; // Poll every 5 seconds
+
+    const updateCurrentlyPlaying = async () => {
+      try {
+        // Get currently playing from Spotify
+        const playerData = await getCurrentlyPlaying(session);
+
+        // Update local state
+        setCurrentlyPlaying(playerData);
+        setIsPlaying(playerData?.is_playing || false);
+
+        // Update the session for all users
+        if (playerData) {
+          await fetch('/api/session/update-playing', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId,
+              currentTrack: playerData,
+            }),
+          });
+        }
+      } catch (error) {
+        console.error('Error updating currently playing:', error);
+      }
+    };
+
+    // Initial update
+    updateCurrentlyPlaying();
+
+    // Set up interval
+    const intervalId = setInterval(updateCurrentlyPlaying, pollInterval);
+
+    return () => clearInterval(intervalId);
+  }, [session, isHost, sessionId]);
+
+  // Check for active device on initial load for host
+  useEffect(() => {
+    if (!session || !isHost) return;
+
+    const checkDevice = async () => {
+      try {
+        const player = await getPlayerState(session);
+
+        if (!player || !player.device) {
+          toast({
+            title: 'No Active Device',
+            description: 'Please open Spotify and start playing to enable queue control.',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Error checking device:', error);
+      }
+    };
+
+    checkDevice();
+  }, [session, isHost]);
 
   // Handle search
   const handleSearch = async () => {
@@ -100,18 +216,66 @@ export default function Dashboard() {
 
   // Handle adding to queue
   const handleAddToQueue = async (track: Track) => {
-    if (!session) return;
+    if (!sessionId || !userId) {
+      toast({
+        title: 'Session Error',
+        description: 'No active session found.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     try {
-      await addToQueue(track.uri, session);
+      // If we're the host, add to Spotify queue
+      if (isHost && session) {
+        try {
+          await addToQueue(track.uri, session);
+        } catch (error) {
+          console.error('Error adding to Spotify queue:', error);
+          toast({
+            title: 'Spotify Queue Error',
+            description: 'Failed to add track to Spotify. Make sure a Spotify device is active.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
 
-      const queueItem: QueueItem = {
+      // Add to session queue for all users to see
+      const response = await fetch('/api/queue/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          userId,
+          track: {
+            id: track.id,
+            uri: track.uri,
+            name: track.name,
+            artists: track.artists,
+            album: track.album,
+            albumArt: track.albumArt,
+            duration: track.duration,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add track to queue');
+      }
+
+      const data = await response.json();
+
+      // Update local queue immediately for better UX
+      const queuedTrack: QueueItem = {
         ...track,
-        addedBy: session?.user?.name || 'Unknown',
-        addedAt: new Date(),
+        addedBy: userId,
+        addedAt: Date.now(),
       };
 
-      setQueue((prevQueue) => [...prevQueue, queueItem]);
+      setQueue((prevQueue) => [...prevQueue, queuedTrack]);
 
       toast({
         title: 'Added to Queue',
@@ -121,15 +285,15 @@ export default function Dashboard() {
       console.error('Error adding to queue:', error);
       toast({
         title: 'Queue Error',
-        description: 'Failed to add track to queue. Make sure a Spotify device is active.',
+        description: 'Failed to add track to queue.',
         variant: 'destructive',
       });
     }
   };
 
-  // Playback controls
+  // Playback controls (host only)
   const handlePlayPause = async () => {
-    if (!session) return;
+    if (!session || !isHost) return;
 
     try {
       if (isPlaying) {
@@ -150,11 +314,14 @@ export default function Dashboard() {
   };
 
   const handleSkip = async () => {
-    if (!session) return;
+    if (!session || !isHost) return;
 
     try {
       await skipToNext(session);
-      // The currently playing track will update on the next poll
+      toast({
+        title: 'Track Skipped',
+        description: 'Skipped to the next track in queue.',
+      });
     } catch (error) {
       console.error('Error skipping track:', error);
       toast({
@@ -185,13 +352,19 @@ export default function Dashboard() {
             {sessionCode && <div className="ml-4 bg-green-500/20 px-3 py-1 rounded-full text-sm font-mono">Code: {sessionCode}</div>}
           </div>
           <div className="flex items-center space-x-3">
-            {session?.user?.image && (
+            <div className="text-sm text-gray-300">
+              {isHost ? 'Host' : 'Guest'}: {userName || session?.user?.name || 'Guest'}
+            </div>
+            {session?.user?.image ? (
               <Avatar>
                 <AvatarImage src={session.user.image} alt={session.user.name || ''} />
                 <AvatarFallback>{session.user.name?.charAt(0) || 'U'}</AvatarFallback>
               </Avatar>
+            ) : (
+              <Avatar>
+                <AvatarFallback>{userName?.charAt(0) || 'G'}</AvatarFallback>
+              </Avatar>
             )}
-            <span className="text-sm font-medium">{session?.user?.name || 'Guest'}</span>
           </div>
         </div>
       </header>
@@ -202,7 +375,7 @@ export default function Dashboard() {
           <Card className="bg-gradient-to-r from-green-900/50 to-black border-green-500/20">
             <CardContent className="p-6">
               <h2 className="text-xl font-bold mb-4">Now Playing</h2>
-              {currentlyPlaying ? (
+              {currentlyPlaying && currentlyPlaying.item ? (
                 <div className="flex items-center space-x-4">
                   <div className="flex-shrink-0">
                     <img src={currentlyPlaying.item?.album.images[0]?.url} alt={currentlyPlaying.item?.album.name} className="w-20 h-20 object-cover rounded-md" />
@@ -211,22 +384,60 @@ export default function Dashboard() {
                     <h3 className="font-bold">{currentlyPlaying.item?.name}</h3>
                     <p className="text-gray-300 text-sm">{currentlyPlaying.item?.artists.map((a: any) => a.name).join(', ')}</p>
                   </div>
-                  <div className="flex space-x-2">
-                    <Button variant="outline" size="icon" className="rounded-full border-green-500/50 hover:bg-green-500/20" onClick={handlePlayPause}>
-                      {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-                    </Button>
-                    <Button variant="outline" size="icon" className="rounded-full border-green-500/50 hover:bg-green-500/20" onClick={handleSkip}>
-                      <SkipForward className="h-5 w-5" />
-                    </Button>
-                  </div>
+                  {isHost && (
+                    <div className="flex space-x-2">
+                      <Button variant="outline" size="icon" className="rounded-full border-green-500/50 hover:bg-green-500/20" onClick={handlePlayPause}>
+                        {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                      </Button>
+                      <Button variant="outline" size="icon" className="rounded-full border-green-500/50 hover:bg-green-500/20" onClick={handleSkip}>
+                        <SkipForward className="h-5 w-5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-6 text-gray-400">
                   <Music className="w-10 h-10 mx-auto mb-2 opacity-50" />
                   <p>No track currently playing</p>
-                  <p className="text-sm mt-2">Start playback on your Spotify app</p>
+                  {isHost ? <p className="text-sm mt-2">Start playback on your Spotify app</p> : <p className="text-sm mt-2">Waiting for host to play music</p>}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Party People */}
+        <div className="lg:col-span-1">
+          <Card className="bg-black/40 border-green-500/20">
+            <CardContent className="p-6">
+              <h2 className="text-xl font-bold mb-4 flex items-center">
+                <Users className="mr-2 h-5 w-5" />
+                Party People ({users.length || 0})
+              </h2>
+              <div className="space-y-3">
+                {users && users.length > 0 ? (
+                  users.map((user) => (
+                    <div key={user.id} className="flex items-center space-x-3 p-2 bg-black/30 rounded-md">
+                      <Avatar className="h-8 w-8">
+                        {user.avatar ? <AvatarImage src={user.avatar} alt={user.name} /> : null}
+                        <AvatarFallback className="text-xs">{user.name.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-grow">
+                        <p className="font-medium text-sm">
+                          {user.name}
+                          {user.id === (session?.user?.email || session?.user?.name) && ' (You)'}
+                        </p>
+                        <p className="text-xs text-gray-400">Added {user.songsAdded} songs</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-4 text-gray-400">
+                    <p>No one has joined yet</p>
+                    <p className="text-xs mt-1">Share the code: {sessionCode}</p>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -250,7 +461,7 @@ export default function Dashboard() {
                 </Button>
               </div>
 
-              <div className="mt-4 space-y-2">
+              <div className="mt-4 space-y-2 max-h-[400px] overflow-y-auto">
                 {searchResults.length > 0 ? (
                   searchResults.map((track) => (
                     <div key={track.id} className="flex items-center justify-between p-3 bg-black/30 rounded-md hover:bg-green-900/20 transition-colors">
@@ -288,12 +499,12 @@ export default function Dashboard() {
         </div>
 
         {/* Queue Section */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-3">
           <Card className="bg-black/40 border-green-500/20">
             <CardContent className="p-6">
               <h2 className="text-xl font-bold mb-4">Queue</h2>
-              {queue.length > 0 ? (
-                <div className="space-y-3">
+              {queue && queue.length > 0 ? (
+                <div className="space-y-3 max-h-[300px] overflow-y-auto">
                   {queue.map((item, index) => (
                     <div key={`${item.id}-${index}`} className="flex items-center space-x-3 p-2 bg-black/30 rounded-md">
                       <div className="flex-shrink-0">
@@ -313,6 +524,7 @@ export default function Dashboard() {
                         <Clock className="h-3 w-3 mr-1" />
                         {formatDuration(item.duration)}
                       </div>
+                      <div className="flex-shrink-0 text-xs text-gray-400">Added by {users.find((u) => u.id === item.addedBy)?.name || 'Unknown'}</div>
                     </div>
                   ))}
                 </div>

@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Music, LogIn } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { toast } from '@/components/ui/use-toast';
+import { LogIn, Music } from 'lucide-react';
 import { signIn, useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 export default function HostPage() {
   const [sessionName, setSessionName] = useState('');
@@ -18,7 +19,7 @@ export default function HostPage() {
   const handleLogin = async () => {
     if (!sessionName.trim()) return;
 
-    if (!session) {
+    if (status === 'unauthenticated') {
       // If not logged in with Spotify, initiate login
       signIn('spotify', { callbackUrl: `/host?sessionName=${encodeURIComponent(sessionName)}` });
       return;
@@ -37,15 +38,21 @@ export default function HostPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create session');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create session');
       }
 
       const data = await response.json();
 
       // Navigate to dashboard with session info
-      router.push(`/dashboard?session=${data.session.id}&code=${data.session.code}`);
-    } catch (error) {
+      router.push(`/dashboard?session=${data.session.id}&code=${data.session.code}&host=true`);
+    } catch (error: any) {
       console.error('Error creating session:', error);
+      toast({
+        title: 'Session Error',
+        description: error.message || 'Failed to create session',
+        variant: 'destructive',
+      });
       setIsLoading(false);
     }
   };
@@ -83,7 +90,7 @@ export default function HostPage() {
             ) : (
               <span className="flex items-center">
                 <LogIn className="mr-2 h-5 w-5" />
-                {session ? 'Create Session' : 'Connect with Spotify'}
+                {status === 'authenticated' ? 'Create Session' : 'Connect with Spotify'}
               </span>
             )}
           </Button>

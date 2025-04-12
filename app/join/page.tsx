@@ -1,25 +1,24 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { toast } from '@/components/ui/use-toast';
 import { Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 export default function JoinPage() {
   const [sessionCode, setSessionCode] = useState('');
   const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
   const router = useRouter();
 
   const handleJoin = async () => {
     if (!sessionCode.trim() || !username.trim()) return;
 
     setIsLoading(true);
-    setError('');
 
     try {
       // Join the session
@@ -45,7 +44,11 @@ export default function JoinPage() {
       router.push(`/dashboard?session=${data.session.id}&code=${data.session.code}&userId=${data.user.id}&username=${encodeURIComponent(username)}`);
     } catch (error: any) {
       console.error('Error joining session:', error);
-      setError(error.message || 'Failed to join session');
+      toast({
+        title: 'Join Error',
+        description: error.message || 'Failed to join session',
+        variant: 'destructive',
+      });
       setIsLoading(false);
     }
   };
@@ -63,7 +66,6 @@ export default function JoinPage() {
           <CardDescription className="text-center text-gray-400">Enter the session code and your name to join</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && <div className="p-3 bg-red-900/50 border border-red-500/30 rounded text-red-200 text-sm">{error}</div>}
           <div className="space-y-2">
             <Label htmlFor="session-code" className="text-white">
               Session Code

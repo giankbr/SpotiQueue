@@ -1,28 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { createSession } from '@/lib/session';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../../auth/[...nextauth]/route';
+import { getServerSession } from 'next-auth/react';
+import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
+  const session = await getServerSession();
 
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
-    const { name } = await req.json();
-
-    if (!name) {
-      return NextResponse.json({ error: 'Session name is required' }, { status: 400 });
-    }
-
-    const userId = session.user?.email || 'unknown';
-    const newSession = createSession(name, userId);
-
-    return NextResponse.json({ session: newSession });
-  } catch (error) {
-    console.error('Error creating session:', error);
-    return NextResponse.json({ error: 'Failed to create session' }, { status: 500 });
+  if (!session || !session.user) {
+    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
+
+  const { name } = await req.json();
+
+  if (!name) {
+    return NextResponse.json({ error: 'Session name is required' }, { status: 400 });
+  }
+
+  const userId = session.user.email || session.user.name || 'unknown';
+  const userName = session.user.name || 'Host';
+  const avatar = session.user.image;
+
+  const queueSession = createSession(name, userId, userName, avatar);
+
+  return NextResponse.json({
+    session: {
+      id: queueSession.id,
+      code: queueSession.code,
+      name: queueSession.name,
+      hostId: userId,
+      hostName: userName,
+    },
+  });
 }
