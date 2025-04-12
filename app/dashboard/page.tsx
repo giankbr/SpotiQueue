@@ -70,11 +70,15 @@ export default function Dashboard() {
   }, [searchParams, session]);
 
   // Start polling for session updates if we're in a session
+  // Modify your useEffect in the Dashboard component
   useEffect(() => {
     if (!sessionId || isPolling) return;
 
-    const pollInterval = 3000; // Poll every 3 seconds
+    const pollInterval = 5000; // Increased from 3000 to 5000ms
     setIsPolling(true);
+
+    let timeoutId: NodeJS.Timeout;
+    let consecutiveErrors = 0;
 
     const pollSessionStatus = async () => {
       try {
@@ -90,8 +94,11 @@ export default function Dashboard() {
             router.push('/');
             return;
           }
-          throw new Error('Failed to fetch session status');
+          throw new Error(`Failed to fetch session status: ${response.status}`);
         }
+
+        // Reset error count on success
+        consecutiveErrors = 0;
 
         const data = await response.json();
         setQueue(data.session.queue || []);
@@ -101,19 +108,27 @@ export default function Dashboard() {
           setCurrentlyPlaying(data.session.currentlyPlaying);
           setIsPlaying(data.session.currentlyPlaying.is_playing || false);
         }
+
+        // Schedule next poll
+        const nextPoll = Math.min(pollInterval * Math.pow(1.5, consecutiveErrors), 30000);
+        timeoutId = setTimeout(pollSessionStatus, nextPoll);
       } catch (error) {
         console.error('Error polling session status:', error);
+
+        // Increase backoff on consecutive errors
+        consecutiveErrors++;
+
+        // Exponential backoff with maximum of 30 seconds
+        const nextPoll = Math.min(pollInterval * Math.pow(1.5, consecutiveErrors), 30000);
+        timeoutId = setTimeout(pollSessionStatus, nextPoll);
       }
     };
 
     // Initial poll
     pollSessionStatus();
 
-    // Set up interval for polling
-    const intervalId = setInterval(pollSessionStatus, pollInterval);
-
     return () => {
-      clearInterval(intervalId);
+      if (timeoutId) clearTimeout(timeoutId);
       setIsPolling(false);
     };
   }, [sessionId, router, isPolling]);

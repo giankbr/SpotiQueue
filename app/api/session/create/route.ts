@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     const userName = session.user.name || 'Host';
     const avatar = session.user.image;
 
-    const newSession = createSession(name, userId, userName, avatar);
+    const newSession = await createSession(name, userId, userName, avatar);
 
     return NextResponse.json({
       session: {

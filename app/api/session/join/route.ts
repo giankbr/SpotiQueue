@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session code and username are required' }, { status: 400 });
     }
 
-    const session = getSessionByCode(code);
+    const session = await getSessionByCode(code);
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found. Check the code and try again.' }, { status: 404 });
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const userId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     // Add user to session
-    const newUser = addUserToSession(session.id, userId, username);
+    const newUser = await addUserToSession(session.id, userId, username);
 
     if (!newUser) {
       return NextResponse.json({ error: 'Failed to join session' }, { status: 500 });
