@@ -868,35 +868,30 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
-              {showLyrics && (
-                <div className="mt-6 bg-black/50 p-4 rounded-lg border border-white/5">
-                  <h3 className="text-lg font-bold text-green-500 mb-2">Lyrics</h3>
-                  <p className="text-sm text-gray-300 whitespace-pre-wrap">{lyrics || 'Lyrics not available for this track.'}</p>
-                  <Button variant="ghost" size="sm" className="mt-4 bg-black/30 hover:bg-black/50 text-gray-400" onClick={() => setShowLyrics(false)}>
-                    Close Lyrics
-                  </Button>
+              {showLyrics && currentlyPlaying?.item && (
+                <div className="mt-6 bg-black/50 p-5 rounded-lg border border-white/10 transition-all duration-300 ease-in-out">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-bold text-green-500">Lyrics</h3>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 rounded-full hover:bg-black/50" onClick={() => setShowLyrics(false)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  <div className="max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    {lyrics ? (
+                      <p className="text-sm text-gray-200 whitespace-pre-line leading-relaxed">{lyrics}</p>
+                    ) : (
+                      <div className="text-center py-8">
+                        <Music className="h-10 w-10 mx-auto mb-2 text-green-500/30" />
+                        <p className="text-gray-400">No lyrics found for this track.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
         </section>
-
-        {/* Lyrics Modal */}
-        {showLyrics && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-black/90 border border-white/10 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-              <div className="p-4 border-b border-white/10 flex justify-between items-center">
-                <h3 className="text-xl font-bold">
-                  {currentlyPlaying?.item?.name} - {currentlyPlaying?.item?.artists[0].name}
-                </h3>
-                <Button variant="ghost" size="icon" onClick={() => setShowLyrics(false)}>
-                  <X className="w-5 h-5" />
-                </Button>
-              </div>
-              <div className="p-6 whitespace-pre-line text-gray-200">{lyrics || 'No lyrics found for this song.'}</div>
-            </div>
-          </div>
-        )}
 
         {/* Main content grid */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
