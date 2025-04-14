@@ -825,18 +825,8 @@ export default function Dashboard() {
                             </Button>
                           </div>
                         )}
-                        {/* <Button
-                          variant="outline"
-                          size="icon"
-                          className="rounded-full border-green-500 bg-black/30 hover:bg-green-500/10 h-12 w-12"
-                          onClick={handleFetchLyrics}
-                          disabled={loadingLyrics}
-                        >
-                          {loadingLyrics ? <RefreshCw className="h-6 w-6 text-green-500 animate-spin" /> : <Music className="h-6 w-6 text-green-500" />}
-                        </Button> */}
                       </div>
 
-                      {/* Add this to your Now Playing section */}
                       {currentlyPlaying && currentlyPlaying.item && (
                         <div className="flex items-center mt-4 space-x-2">
                           <Button variant="outline" size="sm" className="bg-green-500 hover:bg-green-600 text-black" onClick={handleFetchLyrics} disabled={loadingLyrics}>
