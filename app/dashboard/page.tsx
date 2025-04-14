@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { addToQueue, getCurrentlyPlaying, getPlayerState, pauseTrack, playTrack, skipToNext } from '@/lib/spotify';
 import { supabaseClient } from '@/lib/supabase-client';
-import { Clock, Music, Pause, Play, Plus, RefreshCw, Search, Share2, SkipForward, Users, X } from 'lucide-react';
+import { Clock, FileText, Music, Pause, Play, Plus, RefreshCw, Search, Share2, SkipForward, Users, X } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -55,6 +55,9 @@ export default function Dashboard() {
   const [hostId, setHostId] = useState<string | null>(null);
   const [playbackHistory, setPlaybackHistory] = useState<string[]>([]);
   const [shownSpotifyQueueInfo, setShownSpotifyQueueInfo] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [lyrics, setLyrics] = useState<string>('');
+  const [loadingLyrics, setLoadingLyrics] = useState(false);
 
   // Get session info from URL params
   useEffect(() => {
@@ -729,6 +732,35 @@ export default function Dashboard() {
     return false;
   };
 
+  const handleFetchLyrics = async () => {
+    if (!currentlyPlaying?.item) return;
+
+    setLoadingLyrics(true);
+    try {
+      const trackName = currentlyPlaying.item.name;
+      const artistName = currentlyPlaying.item.artists[0].name;
+
+      const response = await fetch(`/api/lyrics?track=${encodeURIComponent(trackName)}&artist=${encodeURIComponent(artistName)}`);
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch lyrics');
+      }
+
+      const data = await response.json();
+      setLyrics(data.lyrics);
+      setShowLyrics(true);
+    } catch (error) {
+      console.error('Error fetching lyrics:', error);
+      toast({
+        title: 'Lyrics Error',
+        description: 'Failed to load lyrics',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingLyrics(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-900 to-black text-white">
       {/* Header */}
@@ -739,22 +771,6 @@ export default function Dashboard() {
               <Music className="w-5 h-5 text-black" />
             </div>
             <h1 className="text-xl font-bold">SpotiQueue</h1>
-            {/* {sessionCode && (
-              <div className="hidden sm:flex ml-4 items-center gap-2 bg-black/30 border border-white/5 px-3 py-1 rounded-full">
-                <span className="text-sm text-white font-medium">Code: {sessionCode}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 rounded-full hover:bg-green-500/10"
-                  onClick={() => {
-                    navigator.clipboard.writeText(sessionCode);
-                    toast({ title: 'Copied to clipboard', description: 'Session code copied!' });
-                  }}
-                >
-                  <Share2 className="h-3 w-3 text-green-500" />
-                </Button>
-              </div>
-            )} */}
           </div>
 
           <div className="flex items-center space-x-3">
@@ -809,7 +825,35 @@ export default function Dashboard() {
                             </Button>
                           </div>
                         )}
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="rounded-full border-green-500 bg-black/30 hover:bg-green-500/10 h-12 w-12"
+                          onClick={handleFetchLyrics}
+                          disabled={loadingLyrics}
+                        >
+                          {loadingLyrics ? <RefreshCw className="h-6 w-6 text-green-500 animate-spin" /> : <Music className="h-6 w-6 text-green-500" />}
+                        </Button>
                       </div>
+
+                      {/* Add this to your Now Playing section */}
+                      {currentlyPlaying && currentlyPlaying.item && (
+                        <div className="flex items-center mt-4 space-x-2">
+                          <Button variant="outline" size="sm" className="bg-black/30 border-white/10 hover:bg-black/50" onClick={handleFetchLyrics} disabled={loadingLyrics}>
+                            {loadingLyrics ? (
+                              <span className="flex items-center">
+                                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                Loading Lyrics...
+                              </span>
+                            ) : (
+                              <span className="flex items-center">
+                                <FileText className="w-4 h-4 mr-2" />
+                                View Lyrics
+                              </span>
+                            )}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="py-4">
@@ -824,9 +868,35 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
+              {showLyrics && (
+                <div className="mt-6 bg-black/50 p-4 rounded-lg border border-white/5">
+                  <h3 className="text-lg font-bold text-green-500 mb-2">Lyrics</h3>
+                  <p className="text-sm text-gray-300 whitespace-pre-wrap">{lyrics || 'Lyrics not available for this track.'}</p>
+                  <Button variant="ghost" size="sm" className="mt-4 bg-black/30 hover:bg-black/50 text-gray-400" onClick={() => setShowLyrics(false)}>
+                    Close Lyrics
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </section>
+
+        {/* Lyrics Modal */}
+        {showLyrics && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-black/90 border border-white/10 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+              <div className="p-4 border-b border-white/10 flex justify-between items-center">
+                <h3 className="text-xl font-bold">
+                  {currentlyPlaying?.item?.name} - {currentlyPlaying?.item?.artists[0].name}
+                </h3>
+                <Button variant="ghost" size="icon" onClick={() => setShowLyrics(false)}>
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+              <div className="p-6 whitespace-pre-line text-gray-200">{lyrics || 'No lyrics found for this song.'}</div>
+            </div>
+          </div>
+        )}
 
         {/* Main content grid */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
