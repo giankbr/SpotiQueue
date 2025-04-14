@@ -825,7 +825,7 @@ export default function Dashboard() {
                             </Button>
                           </div>
                         )}
-                        <Button
+                        {/* <Button
                           variant="outline"
                           size="icon"
                           className="rounded-full border-green-500 bg-black/30 hover:bg-green-500/10 h-12 w-12"
@@ -833,7 +833,7 @@ export default function Dashboard() {
                           disabled={loadingLyrics}
                         >
                           {loadingLyrics ? <RefreshCw className="h-6 w-6 text-green-500 animate-spin" /> : <Music className="h-6 w-6 text-green-500" />}
-                        </Button>
+                        </Button> */}
                       </div>
 
                       {/* Add this to your Now Playing section */}
