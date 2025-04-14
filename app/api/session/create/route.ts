@@ -12,11 +12,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
+    // DEBUGGING: Log the session structure to understand its format
+    console.log('Session structure:', JSON.stringify(session, null, 2));
+
     const { name, code } = await req.json();
 
     if (!name) {
       return NextResponse.json({ error: 'Session name is required' }, { status: 400 });
     }
+
+    // Create a temporary user ID if none exists in session
+    // Try multiple possible locations of the user ID in the session object
+    const userId = session.user?.id || session.sub || session.user?.sub || session.userId || session.user?.email || uuidv4(); // Last resort fallback
+
+    console.log('Using user ID:', userId);
 
     // Use the provided code instead of generating a random one
     const sessionCode = code || generateSessionCode();
@@ -28,14 +37,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session code already in use. Please try a different code.' }, { status: 409 });
     }
 
-    // Create session in database
+    // Create session in database with the extracted or generated user ID
     const { data: newSession, error: sessionError } = await supabaseClient
       .from('sessions')
       .insert({
         id: uuidv4(),
         name,
         code: sessionCode,
-        host_id: session.user.id,
+        host_id: userId, // Use the extracted or generated user ID
         active: true,
       })
       .select()
@@ -48,10 +57,10 @@ export async function POST(req: NextRequest) {
 
     // Create user record for the host
     const { error: userError } = await supabaseClient.from('session_users').insert({
-      id: session.user.id,
+      id: userId, // Use the same ID here
       session_id: newSession.id,
-      name: session.user.name || 'Host',
-      avatar: session.user.image,
+      name: session.user?.name || 'Host',
+      avatar: session.user?.image,
       songs_added: 0,
     });
 
