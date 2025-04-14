@@ -5,42 +5,23 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/use-toast';
-import { LogIn, Music } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Users } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 export default function JoinPage() {
-  const searchParams = useSearchParams();
+  const [sessionCode, setSessionCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  // Get code from URL and use it as initial state
-  const codeFromURL = searchParams.get('code') || '';
-  const [sessionCode, setSessionCode] = useState(codeFromURL);
-  const [userName, setUserName] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  // This effect will run if the URL parameters change
-  useEffect(() => {
-    const code = searchParams.get('code');
-    if (code) {
-      setSessionCode(code);
-    }
-  }, [searchParams]);
-
   const handleJoin = async () => {
-    // Your existing join logic
-    if (!sessionCode.trim() || !userName.trim()) {
-      toast({
-        title: 'Missing Information',
-        description: 'Please enter both a session code and your name.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    if (!sessionCode.trim() || !username.trim()) return;
 
     setIsLoading(true);
 
     try {
+      // Join the session
       const response = await fetch('/api/session/join', {
         method: 'POST',
         headers: {
@@ -48,19 +29,19 @@ export default function JoinPage() {
         },
         body: JSON.stringify({
           code: sessionCode,
-          name: userName,
+          username: username,
         }),
       });
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to join session');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to join session');
       }
 
       const data = await response.json();
 
       // Navigate to dashboard with session info
-      router.push(`/dashboard?session=${data.sessionId}&code=${sessionCode}&userId=${data.userId}&username=${userName}`);
+      router.push(`/dashboard?session=${data.session.id}&code=${data.session.code}&userId=${data.user.id}&username=${encodeURIComponent(username)}`);
     } catch (error: any) {
       console.error('Error joining session:', error);
       toast({
@@ -78,11 +59,11 @@ export default function JoinPage() {
         <CardHeader>
           <div className="flex items-center justify-center mb-4">
             <div className="bg-green-500 p-3 rounded-full">
-              <Music className="w-8 h-8 text-black" />
+              <Users className="w-8 h-8 text-black" />
             </div>
           </div>
-          <CardTitle className="text-2xl text-center text-white">Join SpotiQueue Session</CardTitle>
-          <CardDescription className="text-center text-gray-400">Enter the session code to join the party</CardDescription>
+          <CardTitle className="text-2xl text-center text-white">Join a SpotiQueue Session</CardTitle>
+          <CardDescription className="text-center text-gray-400">Enter the session code and your name to join</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -91,22 +72,21 @@ export default function JoinPage() {
             </Label>
             <Input
               id="session-code"
-              placeholder="e.g. ABC123"
+              placeholder="Enter code"
               value={sessionCode}
               onChange={(e) => setSessionCode(e.target.value.toUpperCase())}
-              className="bg-black/60 border-green-500/30 text-white text-center text-xl tracking-wider font-bold"
-              maxLength={8}
+              className="bg-black/60 border-green-500/30 text-white"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="user-name" className="text-white">
+            <Label htmlFor="username" className="text-white">
               Your Name
             </Label>
-            <Input id="user-name" placeholder="How should we call you?" value={userName} onChange={(e) => setUserName(e.target.value)} className="bg-black/60 border-green-500/30 text-white" />
+            <Input id="username" placeholder="How others will see you" value={username} onChange={(e) => setUsername(e.target.value)} className="bg-black/60 border-green-500/30 text-white" />
           </div>
         </CardContent>
         <CardFooter>
-          <Button className="w-full py-6 text-lg bg-green-500 hover:bg-green-600 text-black" onClick={handleJoin} disabled={isLoading || !sessionCode.trim() || !userName.trim()}>
+          <Button className="w-full py-6 text-lg bg-green-500 hover:bg-green-600 text-black" onClick={handleJoin} disabled={isLoading || !sessionCode.trim() || !username.trim()}>
             {isLoading ? (
               <span className="flex items-center">
                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -117,7 +97,7 @@ export default function JoinPage() {
               </span>
             ) : (
               <span className="flex items-center">
-                <LogIn className="mr-2 h-5 w-5" />
+                <Users className="mr-2 h-5 w-5" />
                 Join Session
               </span>
             )}
