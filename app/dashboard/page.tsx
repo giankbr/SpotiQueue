@@ -839,7 +839,7 @@ export default function Dashboard() {
                       {/* Add this to your Now Playing section */}
                       {currentlyPlaying && currentlyPlaying.item && (
                         <div className="flex items-center mt-4 space-x-2">
-                          <Button variant="outline" size="sm" className="bg-black/30 border-white/10 hover:bg-black/50" onClick={handleFetchLyrics} disabled={loadingLyrics}>
+                          <Button variant="outline" size="sm" className="bg-green-500 hover:bg-green-600 text-black" onClick={handleFetchLyrics} disabled={loadingLyrics}>
                             {loadingLyrics ? (
                               <span className="flex items-center">
                                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -847,7 +847,7 @@ export default function Dashboard() {
                               </span>
                             ) : (
                               <span className="flex items-center">
-                                <FileText className="w-4 h-4 mr-2" />
+                                <FileText className="h-5 w-5 mr-2" />
                                 View Lyrics
                               </span>
                             )}
