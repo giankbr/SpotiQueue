@@ -12,6 +12,7 @@ import { useState } from 'react';
 
 export default function HostPage() {
   const [sessionName, setSessionName] = useState('');
+  const [sessionCode, setSessionCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -19,22 +20,37 @@ export default function HostPage() {
   const handleLogin = async () => {
     if (!sessionName.trim()) return;
 
+    // Validate session code
+    if (!sessionCode.trim()) {
+      toast({
+        title: 'Session Code Required',
+        description: 'Please enter a session code for your guests to join with.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (status === 'unauthenticated') {
       // If not logged in with Spotify, initiate login
-      signIn('spotify', { callbackUrl: `/host?sessionName=${encodeURIComponent(sessionName)}` });
+      signIn('spotify', {
+        callbackUrl: `/host?sessionName=${encodeURIComponent(sessionName)}&sessionCode=${encodeURIComponent(sessionCode)}`,
+      });
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Create a new session
+      // Create a new session with the manually entered code
       const response = await fetch('/api/session/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: sessionName }),
+        body: JSON.stringify({
+          name: sessionName,
+          code: sessionCode, // Send the manually entered code
+        }),
       });
 
       if (!response.ok) {
@@ -76,9 +92,22 @@ export default function HostPage() {
             </Label>
             <Input id="session-name" placeholder="My Awesome Party" value={sessionName} onChange={(e) => setSessionName(e.target.value)} className="bg-black/60 border-green-500/30 text-white" />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="session-code" className="text-white">
+              Session Code
+            </Label>
+            <Input
+              id="session-code"
+              placeholder="Create a simple code (e.g. PARTY123)"
+              value={sessionCode}
+              onChange={(e) => setSessionCode(e.target.value)}
+              className="bg-black/60 border-green-500/30 text-white"
+            />
+            <p className="text-sm text-gray-400">Create a simple code that's easy for your friends to type in.</p>
+          </div>
         </CardContent>
         <CardFooter>
-          <Button className="w-full py-6 text-lg bg-green-500 hover:bg-green-600 text-black" onClick={handleLogin} disabled={isLoading || !sessionName.trim()}>
+          <Button className="w-full py-6 text-lg bg-green-500 hover:bg-green-600 text-black" onClick={handleLogin} disabled={isLoading || !sessionName.trim() || !sessionCode.trim()}>
             {isLoading ? (
               <span className="flex items-center">
                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
