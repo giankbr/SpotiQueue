@@ -414,35 +414,47 @@ export default function Dashboard() {
           async (payload) => {
             console.log('Host received Spotify queue request:', payload.new);
 
-            // Process the request
-            try {
-              // Add to Spotify
-              await addToQueue(payload.new.track_uri, session);
+            // Add a retry mechanism for failed requests
+            let retryCount = 0;
+            const maxRetries = 3;
 
-              // Mark as processed
-              await supabaseClient
-                .from('spotify_queue_requests')
-                .update({
-                  processed: true,
-                  processed_at: new Date().toISOString(),
-                })
-                .eq('id', payload.new.id);
+            async function tryAddToSpotify() {
+              try {
+                await addToQueue(payload.new.track_uri, session);
+                // Mark as processed
+                await supabaseClient
+                  .from('spotify_queue_requests')
+                  .update({
+                    processed: true,
+                    processed_at: new Date().toISOString(),
+                  })
+                  .eq('id', payload.new.id);
 
-              console.log(`Successfully added "${payload.new.track_name}" to Spotify queue`);
+                console.log(`Successfully added "${payload.new.track_name}" to Spotify queue`);
+              } catch (error) {
+                console.error(`Attempt ${retryCount + 1} failed:`, error);
 
-              // No need for toast notification as the person who added it already got one
-            } catch (error) {
-              console.error('Failed to add track to Spotify queue:', error);
-
-              // Notify that there was an issue
-              if (payload.new.track_name) {
-                toast({
-                  title: 'Spotify Queue Warning',
-                  description: `Failed to add "${payload.new.track_name}" to Spotify. Make sure Spotify is active.`,
-                  variant: 'warning',
-                });
+                if (retryCount < maxRetries) {
+                  retryCount++;
+                  console.log(`Retrying in 2 seconds... (${retryCount}/${maxRetries})`);
+                  setTimeout(tryAddToSpotify, 2000);
+                } else {
+                  console.error('Max retries exceeded for track:', payload.new.track_name);
+                  // Mark as failed after max retries
+                  await supabaseClient
+                    .from('spotify_queue_requests')
+                    .update({
+                      processed: true,
+                      processed_at: new Date().toISOString(),
+                      error: 'Failed after multiple retries',
+                    })
+                    .eq('id', payload.new.id);
+                }
               }
             }
+
+            // Start the attempt process
+            tryAddToSpotify();
           }
         )
         .subscribe();
@@ -557,52 +569,6 @@ export default function Dashboard() {
 
       if (!response.ok) {
         throw new Error('Failed to add track to queue');
-      }
-
-      await response.json();
-
-      if (isHost && session) {
-        const spotifyQueueRequestSubscription = supabaseClient
-          .channel('spotify-queue-requests')
-          .on(
-            'postgres_changes',
-            {
-              event: 'INSERT',
-              schema: 'public',
-              table: 'spotify_queue_requests',
-              filter: `session_id=eq.${sessionId} AND processed=eq.false`,
-            },
-            async (payload) => {
-              if (!isHost || !session) return;
-
-              try {
-                console.log('Host processing Spotify queue request');
-                const trackUri = payload.new.track_uri;
-
-                await addToQueue(trackUri, session);
-
-                // Mark as processed
-                await supabaseClient
-                  .from('spotify_queue_requests')
-                  .update({
-                    processed: true,
-                    processed_at: new Date().toISOString(),
-                  })
-                  .eq('id', payload.new.id);
-
-                console.log('Successfully added to Spotify queue');
-              } catch (error) {
-                console.error('Host failed to process queue request:', error);
-              }
-            }
-          )
-          .subscribe();
-
-        // Add this to cleanup
-        return () => {
-          // Existing cleanup code...
-          supabaseClient.removeChannel(spotifyQueueRequestSubscription);
-        };
       }
 
       // Update local queue immediately for better UX
